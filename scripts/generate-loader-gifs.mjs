@@ -6,9 +6,8 @@ import { createRequire } from 'node:module'
 // Regenerate the legacy brand loaders (build/dsh-loader.gif and
 // build/dsh-loader-dark.gif) from the brand mark in build/brand-mark.svg.
 // The mark is quantised onto a 4px pixel grid, bobs gently, and sheds a few
-// square "bubbles" from the window's traffic lights — the same motion the
-// previous hand-drawn loaders used. The startup splash now uses the original
-// build/startup-whale.gif asset; this generator must never overwrite it.
+// square "bubbles" from the bump on its head. The startup splash still uses the
+// original build/startup-whale.gif asset; this generator must never overwrite it.
 
 const require = createRequire(import.meta.url)
 const sharp = require('sharp')
@@ -26,9 +25,13 @@ const COLS = WIDTH / CELL
 const ROWS = HEIGHT / CELL
 
 /** Tight bounds of the mark inside its 1000x1000 artwork (shared with the sidebar mark). */
-const MARK_VIEWBOX = { x: 42, y: 218, width: 898, height: 564 }
-/** Body width in cells; matches the ~310px silhouette of the previous loader. */
-const BODY_CELLS = 78
+const MARK_VIEWBOX = { x: 203, y: 135.5, width: 600.75, height: 729 }
+/**
+ * Body width in cells. The mark is 600.75x729, so height is the binding
+ * dimension: 56 cells wide is ~68 rows of the 90-row canvas, leaving the
+ * margins the previous loader had and room for the sparks above the head.
+ */
+const BODY_CELLS = 56
 
 const THEMES = {
   light: {
@@ -53,10 +56,13 @@ async function markMask() {
   if (!d) throw new Error(`No path data in ${path.relative(projectRoot, markSource)}`)
   const width = BODY_CELLS
   const height = Math.round((BODY_CELLS * MARK_VIEWBOX.height) / MARK_VIEWBOX.width)
-  // Render at 4x cell resolution and average down so thin features (the three
-  // dots, the belly bump) survive the threshold instead of dropping out.
+  // Render at 4x cell resolution and average down so thin features (the eyes,
+  // the leg notch) survive the threshold instead of dropping out.
+  // fill-rule is load-bearing: the mark is a single path whose head frame and
+  // screen are carved with evenodd. Under the default nonzero rule the screen
+  // fills in and the eyes disappear into it.
   const oversample = 4
-  const probe = `<svg xmlns="http://www.w3.org/2000/svg" width="${width * oversample}" height="${height * oversample}" viewBox="${MARK_VIEWBOX.x} ${MARK_VIEWBOX.y} ${MARK_VIEWBOX.width} ${MARK_VIEWBOX.height}" preserveAspectRatio="none"><path d="${d}" fill="#fff"/></svg>`
+  const probe = `<svg xmlns="http://www.w3.org/2000/svg" width="${width * oversample}" height="${height * oversample}" viewBox="${MARK_VIEWBOX.x} ${MARK_VIEWBOX.y} ${MARK_VIEWBOX.width} ${MARK_VIEWBOX.height}" preserveAspectRatio="none"><path d="${d}" fill="#fff" fill-rule="evenodd"/></svg>`
   const { data } = await sharp(Buffer.from(probe)).raw().toBuffer({ resolveWithObject: true })
   const cells = new Uint8Array(width * height)
   for (let cy = 0; cy < height; cy += 1) {
@@ -85,16 +91,18 @@ function rng(seed) {
 
 /**
  * Bubbles are scheduled on a loop of FRAMES so the animation cycles seamlessly.
- * Each one starts inside the traffic-light corner, rises about a cell per two
- * frames with a little sideways drift, and fades through the theme's three
- * spark shades before it goes out.
+ * Each one rises about a cell per two frames with a little sideways drift, and
+ * fades through the theme's three spark shades before it goes out.
+ *
+ * They leave from the bump on top of the robot's head, so the loader reads as
+ * a small signal being transmitted rather than as debris floating past.
  */
 function buildSparks(body, random) {
   const sparks = []
+  const bumpX = body.left + Math.round(body.width / 2)
   const emitters = [
-    { x: body.left + 6, y: body.top - 1, count: 5, size: 3 },
-    { x: body.left + 10, y: body.top - 1, count: 3, size: 2 },
-    { x: body.left + body.width - 9, y: body.top + 9, count: 2, size: 2 }
+    { x: bumpX - 2, y: body.top - 1, count: 5, size: 3 },
+    { x: bumpX + 2, y: body.top - 1, count: 3, size: 2 }
   ]
   for (const emitter of emitters) {
     for (let index = 0; index < emitter.count; index += 1) {
