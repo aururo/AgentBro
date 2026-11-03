@@ -79,11 +79,32 @@ npm run package:win           # verify-target + build + electron-builder（Windo
 | --- | --- | --- |
 | git fetch/push | `github.com:22` 不通 | `~/.ssh/config` 把 `github.com` 映射到 `ssh.github.com:443` |
 | Electron 二进制 | GitHub releases 302 落到被墙的 CDN | `ELECTRON_MIRROR` 指向 npmmirror；`electron_config_cache` 需小写变量 |
+| builder 工具包 | NSIS / winCodeSign / 7zip 也从 GitHub releases 拉 | `ELECTRON_BUILDER_BINARIES_MIRROR` 指向 npmmirror 的 `electron-builder-binaries` |
 | Office Python 运行时 | `release-assets.githubusercontent.com` 超时 | 先跑 `seed-office-runtime.ps1` 把发行包按 sha256 预置进 `.build/office-downloads/`，上游脚本命中缓存后不再走网络 |
 
-`agentbro/env.ps1` 负责前两项的环境变量，`agentbro/seed-office-runtime.ps1`
-负责第三项（幂等，校验 sha256 后写入缓存）。所有缓存落在 `E:\temp` 下，
+`agentbro/env.ps1` 负责前三项的环境变量，`agentbro/seed-office-runtime.ps1`
+负责第四项（幂等，校验 sha256 后写入缓存）。所有缓存落在 `E:\temp` 下，
 避开只剩 4GB 的 C 盘。
+
+### 必须关闭 CRLF 转换（Windows）
+
+仓库级配置已经设好 `core.autocrlf=false`。原因：Office / PPT 运行时按**输入字节**
+做指纹校验，`OFL.txt` 的期望 sha256 是 `9ff5bb56…`，而 CRLF 版本是 `c606a29c…`，
+不一致时 `check-templates.py` 会报
+`OFL license does not match the approved notice font`（报错文案与字体无关，实为哈希失配）。
+
+上游 CI 在 Windows 上也是 checkout 之前先 `git config --global core.autocrlf false`。
+如果换机器或重新克隆后再次踩到，用下面这组命令把工作区刷回 LF：
+
+```powershell
+git config core.autocrlf false
+git rm -r --cached . -q
+git reset --hard
+```
+
+第二步不能省：只改配置不重建 index 的话，git 的 stat 缓存会把 CRLF 文件判成
+"未变更"，重新检出不会真正改写字节。
 
 其他：`api.github.com` 可直连，但 `gh` 的设备码登录走 `github.com` 会被阻断，
 需要令牌时用 `gh auth login --with-token`（令牌只进本地凭据存储，不进聊天记录）。
+

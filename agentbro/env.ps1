@@ -10,6 +10,7 @@
       electron_config_cache  —— Electron 44 install.js 只读小写变量
       ELECTRON_CACHE         —— electron-builder 读大写变量
       ELECTRON_BUILDER_CACHE —— NSIS / winCodeSign 等 builder 工具缓存
+      ELECTRON_BUILDER_BINARIES_MIRROR —— builder 工具包（NSIS / winCodeSign / 7zip）镜像
       npm_config_cache       —— npm 包缓存，避开只剩 4GB 的 C 盘
 
     用法（PowerShell 5.1 需要 ExecutionPolicy 放行一次）：
@@ -30,6 +31,7 @@ $env:ELECTRON_MIRROR = 'https://npmmirror.com/mirrors/electron/'
 $env:ELECTRON_CACHE = Join-Path $CacheRoot 'electron-cache'
 $env:electron_config_cache = $env:ELECTRON_CACHE
 $env:ELECTRON_BUILDER_CACHE = Join-Path $CacheRoot 'electron-builder-cache'
+$env:ELECTRON_BUILDER_BINARIES_MIRROR = 'https://cdn.npmmirror.com/binaries/electron-builder-binaries'
 $env:npm_config_cache = Join-Path $CacheRoot 'npm-cache'
 
 foreach ($dir in @($env:ELECTRON_CACHE, $env:ELECTRON_BUILDER_CACHE, $env:npm_config_cache)) {
@@ -41,5 +43,6 @@ Write-Host "  ELECTRON_MIRROR        = $env:ELECTRON_MIRROR"
 Write-Host "  ELECTRON_CACHE         = $env:ELECTRON_CACHE"
 Write-Host "  electron_config_cache  = $env:electron_config_cache"
 Write-Host "  ELECTRON_BUILDER_CACHE = $env:ELECTRON_BUILDER_CACHE"
+Write-Host "  BUILDER_BINARIES_MIRROR = $env:ELECTRON_BUILDER_BINARIES_MIRROR"
 Write-Host "  npm_config_cache       = $env:npm_config_cache"
 
