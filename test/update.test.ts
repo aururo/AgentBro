@@ -70,10 +70,10 @@ describe('macOS update metadata', () => {
     }
     expect(merged.version).toBe('0.2.0')
     expect(merged.files.map((file) => file.url)).toEqual([
-      'dsh-desktop-mac-arm64.zip',
-      'dsh-desktop-mac-x64.zip'
+      'agentbro-mac-arm64.zip',
+      'agentbro-mac-x64.zip'
     ])
-    expect(merged.path).toBe('dsh-desktop-mac-arm64.zip')
+    expect(merged.path).toBe('agentbro-mac-arm64.zip')
     expect(merged.releaseDate).toBe('2026-08-14T02:00:00.000Z')
   })
 })
@@ -83,12 +83,12 @@ function metadata(architecture: 'arm64' | 'x64', releaseDate: string) {
     version: '0.2.0',
     files: [
       {
-        url: `dsh-desktop-mac-${architecture}.zip`,
+        url: `agentbro-mac-${architecture}.zip`,
         sha512: `zip-${architecture}`,
         size: 100
       },
       {
-        url: `dsh-desktop-mac-${architecture}.dmg`,
+        url: `agentbro-mac-${architecture}.dmg`,
         sha512: `dmg-${architecture}`,
         size: 200
       }

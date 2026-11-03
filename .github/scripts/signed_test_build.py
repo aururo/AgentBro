@@ -17,10 +17,10 @@ from test_change_summary import summarize_changes, UNAVAILABLE as SUMMARY_FALLBA
 
 INSTALLERS = {
     "macos": [
-        ("macOS Apple Silicon", "dsh-desktop-mac-arm64.dmg"),
-        ("macOS Intel", "dsh-desktop-mac-x64.dmg"),
+        ("macOS Apple Silicon", "agentbro-mac-arm64.dmg"),
+        ("macOS Intel", "agentbro-mac-x64.dmg"),
     ],
-    "windows": [("Windows x64", "dsh-desktop-windows-x64-setup.exe")],
+    "windows": [("Windows x64", "agentbro-windows-x64-setup.exe")],
 }
 
 
