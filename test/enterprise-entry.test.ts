@@ -16,22 +16,23 @@ describe('Enterprise app menu entry', () => {
     const quit = vi.fn()
     const sendActionToFirstResponder = vi.fn()
     const context = {
-      harnessLocale: () => locale, process: { platform: 'darwin' }, app: { name: 'DSH Desktop', hide, quit },
+      harnessLocale: () => locale, process: { platform: 'darwin' }, app: { name: 'AgentBro', hide, quit },
+      BRAND_DISPLAY: 'AgentBro',
       shell: { openExternal }, showUnexpectedError, developmentRepairDemo: undefined,
       Menu: { buildFromTemplate, setApplicationMenu: vi.fn(), sendActionToFirstResponder }
     }
     vm.runInNewContext(ts.transpile(source.slice(start, end)) + '\ninstallMenu()', context)
     const menu = buildFromTemplate.mock.calls[0]?.[0][0].submenu
-    expect(menu[0].label).toBe(locale === 'zh' ? '关于 DSH Desktop' : 'About DSH Desktop')
+    expect(menu[0].label).toBe(locale === 'zh' ? '关于 AgentBro' : 'About AgentBro')
     expect(menu[1].label).toBe(locale === 'zh' ? '检查更新…' : 'Check for Updates…')
     expect(menu[2].label).toBe(locale === 'zh' ? '了解企业版' : 'Explore Enterprise')
-    expect(menu[4].label).toBe(locale === 'zh' ? '隐藏 DSH Desktop' : 'Hide DSH Desktop')
+    expect(menu[4].label).toBe(locale === 'zh' ? '隐藏 AgentBro' : 'Hide AgentBro')
     expect(menu[4].accelerator).toBe('Command+H')
     expect(menu[4].role).toBeUndefined()
     expect(menu[5].label).toBe(locale === 'zh' ? '隐藏其他' : 'Hide Others')
     expect(menu[5].accelerator).toBe('Command+Alt+H')
     expect(menu[6].label).toBe(locale === 'zh' ? '全部显示' : 'Show All')
-    expect(menu[8].label).toBe(locale === 'zh' ? '退出 DSH Desktop' : 'Quit DSH Desktop')
+    expect(menu[8].label).toBe(locale === 'zh' ? '退出 AgentBro' : 'Quit AgentBro')
     expect(menu[8].accelerator).toBe('Command+Q')
     menu[4].click()
     menu[5].click()

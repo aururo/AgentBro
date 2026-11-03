@@ -8,6 +8,7 @@ import {
   latestHarnessAttemptLogs
 } from './runtime/harness-runtime'
 import type { RuntimeSnapshot } from '../shared/contracts'
+import { BRAND_DISPLAY } from '../shared/brand'
 import { parsePluginStartupFailures, type PluginStartupFailure } from '../shared/plugin-startup-failure'
 
 export type RepairEnvironment = 'normal' | 'safe'
@@ -290,7 +291,7 @@ export function buildSystemRepairPrompt(options: {
     zh
       ? `当前环境：${normal ? '正常运行（非安全模式）' : '安全模式（尚未验证正常启动）'}。`
       : `Current environment: ${normal ? 'normal application (not Safe Mode)' : 'Safe Mode (normal startup has not been verified)'}.`,
-    `${options.platform} (${options.arch}); Node.js ${options.nodeVersion}; DSH Desktop ${options.desktopVersion}`,
+    `${options.platform} (${options.arch}); Node.js ${options.nodeVersion}; ${BRAND_DISPLAY} ${options.desktopVersion}`,
     zh ? `Harness 数据目录（当前会话的工作区）：\`${home}\`` : `Harness home (this session's workspace): \`${home}\``,
     `${zh ? '正常 Profile' : 'Normal profile'}: \`${join(home, 'profiles', 'web')}\``,
     `${zh ? '安全模式 Profile' : 'Safe Mode profile'}: \`${join(home, 'profiles', 'desktop-safe-mode')}\``,

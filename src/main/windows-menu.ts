@@ -1,5 +1,6 @@
 import type { MenuItemConstructorOptions } from 'electron'
 import { formatZoomPercentage, type DesktopMenuCommand } from '../shared/desktop-menu'
+import { BRAND_DISPLAY } from '../shared/brand'
 
 /**
  * The two caption menus the Windows page shows beside the sidebar toggle, in
@@ -106,7 +107,7 @@ export function windowsMenuTemplate(
     },
     { type: 'separator' },
     command('check-for-updates', '检查更新…', 'Check for Updates…', 'Ctrl+U'),
-    command('about', '关于 DSH Desktop', 'About DSH Desktop'),
+    command('about', `关于 ${BRAND_DISPLAY}`, `About ${BRAND_DISPLAY}`),
     { type: 'separator' },
     command('quit', '退出', 'Exit')
   ]
