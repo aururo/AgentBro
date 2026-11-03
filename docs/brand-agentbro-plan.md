@@ -377,3 +377,68 @@ export const BRAND_VERSION_NOTE_ZH = 'Harness 随 AgentBro 更新。'
 2. 用 `--config.electronDist=<本地 Electron dist>` 指向 `node_modules/electron/dist`，并把 `locales/` 预先裁到 `electronLanguages` 白名单（en-US / zh-CN / zh-TW），让 electron-builder 的 `deleteNonMatchedLanguages` 无事可做。
 
 正常 CI 环境不需要这两步。
+
+## 5.7 AgentBro fork 移植实施记录
+
+本 fork（`aururo/AgentBro`）在 `feature/brand-agentbro` 分支上实施本方案。上游基线是
+`3e8db1f`（V0.13.1），参考实现是改版项目（基于上游 `24aad02`）。
+
+### 三方合并口径
+
+改版项目与本 fork 的上游基线不同，中间上游有新增提交。按「上游在基线之后是否动过该文件」
+把改动分成两类：
+
+| 类别 | 数量 | 处理 |
+| --- | --- | --- |
+| 上游未动 | 34 | 直接取改版版本，零冲突 |
+| 上游动过 | 9 | 取上游实现，只叠加品牌语义 |
+
+上游动过、必须手工合并的 9 项：`package.json`（按 6 个键手挑，不整文件合）、
+`src/main/index.ts`、`src/preload/desktop-update-ui.ts`、`src/preload/boot-cover.ts`、
+`.github/workflows/release.yml`、`scripts/install-brand-assets.mjs`、
+`scripts/sign-windows-unpacked.mjs`、`packages/dsh-desktop-{office,workbenches}/package.json`
+（取上游，差异只有 Harness 版本号）。
+
+### 与改版项目的差异
+
+| 项 | 改版项目 | 本 fork | 原因 |
+| --- | --- | --- | --- |
+| 侧边栏字标 | 文本渲染占位（`dshDeskBrandName`） | 终态 SVG 字标，内联 `build/agentbro-wordmark.svg` 的轮廓路径 | 评审决策：直接出终态，不做文本过渡 |
+| `src/main/harness-shell.ts` | 删掉受信任 Origin 翻译的 3 行 | 保持上游实现，不带 | 该删除是 CSRF 防护回退，与品牌无关 |
+| `test/harness-shell.test.ts` | 配套改掉 CSRF 断言 | 保持上游实现，不带 | 同上 |
+| `patches/*` | `0.2.1-rc.3` 换成 `0.2.1-rc.5` | 保持上游 `0.2.2-alpha.2` | Harness 版本回退，与品牌无关 |
+| `docs/harness-0.2.1-rc.5-upgrade.md`、`test/.temp-*`、`.temp-feishu-*.md` | 改版残留 | 不带入 | 与品牌无关 |
+| README / docs 里的产品名 | 未改 | 未改 | 超出本次品牌口径，列为 follow-up |
+| `build/application-rollback.html` 静态页头、插件市场服务报错文案 | 未改 | 补齐为 AgentBro | 用户可见的产品名，改版漏掉；AI 提示词、注释、package description 仍不改 |
+
+### 字标生成链
+
+上游 `BrandWordmark` 是硬编码的 "DeepSeek" 字形路径，无法改字符串替换，因此侧边栏
+品牌名改为自绘。字标由 `scripts/generate-wordmark.mjs` 从 Inter SemiBold 转曲生成：
+
+| 项 | 值 |
+| --- | --- |
+| 字体 | Inter SemiBold，`scripts/fonts/inter-latin-600-normal.woff2`（SIL OFL 1.1） |
+| 画布 | 24 单位高，`viewBox="0 0 84.7 24"` |
+| cap 高 / 基线 | 14 / 18.6（上游 `BrandWordmark` 实测 14.1 / 18.7） |
+| 墨迹 | 84.7 × 19（上游 87 × 18） |
+| 渲染 | 侧边栏 24px 盒高，cap 高落在 14px，与上游光学尺寸一致 |
+
+生成链依赖 `fontkit`（传递依赖，随 `@deepseek-ai/dsh-skill-office` 安装），与 `sharp`
+同类，属未显式声明的传递依赖，记录在 `agentbro/README.md` 的「已知耦合」。
+`build/agentbro-wordmark.svg` 是入库的静态资产，运行期不需要字体文件；`client.js` 里
+内联的路径由 `test/desktop-client-ui.test.ts` 的防漂移断言盯着。
+
+### 产物名契约
+
+| 产物 | 名称 |
+| --- | --- |
+| 正式包 | `agentbro-${os}-${arch}.${ext}` |
+| Windows 安装包 | `agentbro-windows-${arch}-setup.${ext}` |
+| macOS 开发包 | `agentbro-dev-mac-${arch}.{dmg,zip}` |
+| Windows 开发包 | `agentbro-dev-windows-x64-setup.exe` |
+| 开发版产品名 | `AgentBro Dev`（`appId` 仍是 `io.dsh.desktop.dev`） |
+
+`appId: io.dsh.desktop`、`userData` 目录 `dsh-desktop`、`publish.url`、npm 包名
+`dsh-desktop`、插件 id `dsh-desktop-*`、`build/*.patch.yml` 文件名、CI 临时目录名
+`dsh-windows-<run_id>` 全部未动。
