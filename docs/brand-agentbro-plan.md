@@ -442,3 +442,50 @@ export const BRAND_VERSION_NOTE_ZH = 'Harness 随 AgentBro 更新。'
 `appId: io.dsh.desktop`、`userData` 目录 `dsh-desktop`、`publish.url`、npm 包名
 `dsh-desktop`、插件 id `dsh-desktop-*`、`build/*.patch.yml` 文件名、CI 临时目录名
 `dsh-windows-<run_id>` 全部未动。
+
+## 5.8 安装路径与 bundle 改名（机制已查证，macOS 未验证）
+
+`productName` 从 `DSH Desktop` 改成 `AgentBro`，会同时改变 Windows 默认安装目录名
+和 macOS `.app` bundle 名。下面是按 electron-builder 源码查证到的行为，以及本机
+无法验证的部分。
+
+### Windows 安装目录
+
+`APP_FILENAME` 由 `getWindowsInstallationDirName(appInfo, !oneClick || isPerMachine)`
+决定；本项目 `oneClick: false`，所以取 `appInfo.productFilename`，也就是 `productName`
+规整化后的结果：
+
+- 新装默认目录：`<LocalAppData>\Programs\${APP_FILENAME}`，即 `...\Programs\AgentBro`。
+- 老装升级：安装器先从 `HKCU\Software\{APP_GUID}\InstallLocation` 读回上次安装路径。
+  `APP_GUID` 由 `appId` 派生，而 `appId: io.dsh.desktop` 未改，所以注册表键不变，
+  老安装仍能被识别，不会并存出第二份安装记录。
+- 但辅助安装器有一道 `instFilesPre` 兜底：若 `$INSTDIR` 里不含 `${APP_FILENAME}`，
+  就补一个同名子目录。老路径 `...\Programs\DSH Desktop` 不含 "AgentBro"，于是升级
+  后实际落在 `...\Programs\DSH Desktop\AgentBro`。
+
+结论：老用户升级功能正常（快捷方式与注册表都指向新路径），但父目录名仍写着
+DSH Desktop；从第二次更新起路径已含 "AgentBro"，不会再继续变化。仓库自带的
+`build/installer-directories.nsh` 全程只用 `$INSTDIR` 做暂存 / 备份 / 提升，没有
+硬编码路径，不受改名影响。
+
+### macOS bundle
+
+- bundle 目录名 `${productFilename}.app` → `AgentBro.app`；`CFBundleName` 与
+  `CFBundleDisplayName` 同为 `productName` → "AgentBro"。
+- `CFBundleIdentifier` 取 `appId`，仍是 `io.dsh.desktop`。
+- 更新链：electron-updater 的 `MacUpdater` 下载 zip 后交给 Electron 原生
+  `autoUpdater`（Squirrel.Mac）就地替换 bundle。
+
+**未验证**：Squirrel.Mac 在「bundle 改名」时是原地替换旧的 `DSH Desktop.app`，还是
+并列装出新的 `AgentBro.app`，取决于 Squirrel.Mac 自身的 bundle 解析逻辑，其源码在
+Electron 二进制内，不在本仓库。本机是 Windows，没有 macOS 环境，这一段无法验证。
+同理，macOS 的 dmg / zip 产物名、签名与公证也未在本机执行过（`mac.notarize` 为
+`false`）。
+
+### 已知 follow-up
+
+| # | 事项 | 说明 |
+| --- | --- | --- |
+| 1 | 老用户安装目录迁移 | 如需老装升级后直接落到 `...\Programs\AgentBro`，要在 NSIS 侧加一段路径迁移，而不是依赖 electron-builder 的兜底追加 |
+| 2 | macOS 首个 AgentBro 版本 | 建议在 release notes 里提示 macOS 用户手工重装一次，避开 bundle 改名与自动更新的交互 |
+| 3 | 非用户可见的旧名 | AI 提示词、代码注释、`package.json` description、README / docs 与第三方声明按本次口径保持原样，需要时可另开一批 |
