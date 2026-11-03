@@ -1,4 +1,5 @@
 import { isHarnessBootPage } from '../shared/harness-boot'
+import { BRAND_DISPLAY } from '../shared/brand'
 
 export const BOOT_COVER_ID = 'dsh-desktop-boot-cover'
 export const BOOT_COVER_STYLE_ID = 'dsh-desktop-boot-cover-style'
@@ -154,8 +155,8 @@ export function mountBootCover(href: string, options: BootCoverOptions): BootCov
   const title = doc.createElement('h1')
   const status = doc.createElement('p')
   const starting = locale === 'zh'
-    ? { title: '正在启动 DSH Desktop', status: '首次启动可能需要一点时间。' }
-    : { title: 'Starting DSH Desktop', status: 'First launch may take a moment.' }
+    ? { title: `正在启动 ${BRAND_DISPLAY}`, status: '首次启动可能需要一点时间。' }
+    : { title: `Starting ${BRAND_DISPLAY}`, status: 'First launch may take a moment.' }
   const stalled = locale === 'zh'
     ? {
       title: '启动时间较长',

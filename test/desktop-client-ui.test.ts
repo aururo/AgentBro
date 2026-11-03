@@ -51,8 +51,6 @@ describe('DSH Desktop client slot occupants', () => {
       type,
       props: { ...props, children }
     })
-    const BrandWordmark = vi.fn()
-    const FishLogo = vi.fn()
     const plugin = definition!.factory((id) => {
       if (id === 'react') {
         return {
@@ -62,7 +60,7 @@ describe('DSH Desktop client slot occupants', () => {
         }
       }
       if (id === '@deepseek-ai/dsh-client-ui-primitives') {
-        return { BrandWordmark, FishLogo }
+        return {}
       }
       throw new Error(`Unexpected client dependency: ${id}`)
     })
@@ -116,23 +114,56 @@ describe('DSH Desktop client slot occupants', () => {
     const sidebarName = registrations.find(
       ({ config }) => config.name === 'sidebar.brand.name'
     )!.component({}) as { type: unknown; props: Record<string, unknown> }
-    expect(sidebarName.type).toBe(BrandWordmark)
-    expect(sidebarName.props.includeMark).toBe(false)
+    // The upstream `BrandWordmark` is a hard-coded "DeepSeek" glyph path, so the
+    // wordmark is drawn here from the outlines generated into
+    // build/agentbro-wordmark.svg.
+    expect(sidebarName.type).toBe('svg')
+    expect(sidebarName.props.height).toBe(24)
+    expect(sidebarName.props.width).toBeCloseTo(24 * 84.7 / 24, 5)
+    expect(sidebarName.props.viewBox).toBe('0 0 84.7 24')
+    const [namePath] = sidebarName.props.children as Array<{ type: unknown; props: Record<string, unknown> }>
+    if (!namePath) throw new Error('Expected the sidebar wordmark SVG path')
+    expect(namePath.type).toBe('path')
+    expect(namePath.props.fill).toBe('currentColor')
 
     const sidebarMark = registrations.find(
       ({ config }) => config.name === 'sidebar.brand.mark'
     )!.component({ size: 24 }) as { type: unknown; props: Record<string, unknown> }
     expect(sidebarMark.type).toBe('svg')
-    expect(sidebarMark.props.height).toBe(17)
+    // The mark is portrait, so it is sized by height; 20 sits inside the seat's
+    // 24px slot and keeps the optical weight the 17px-tall whale had.
+    expect(sidebarMark.props.height).toBe(20)
+    expect(sidebarMark.props.width).toBeCloseTo(20 * 600.75 / 729, 5)
     const [markPath] = sidebarMark.props.children as Array<{ type: unknown; props: Record<string, unknown> }>
     if (!markPath) throw new Error('Expected the sidebar brand SVG path')
     expect(markPath.type).toBe('path')
     expect(markPath.props.fill).toBe('currentColor')
+    // The head frame and screen are carved with evenodd; the default nonzero
+    // rule would fill the screen in and swallow the eyes.
+    expect(markPath.props.fillRule).toBe('evenodd')
 
     const heroMark = registrations.find(
       ({ config }) => config.name === 'conversation.hero.brand.mark'
     )!.component({ size: 48 }) as { type: unknown; props: Record<string, unknown> }
-    expect(heroMark.type).toBe(FishLogo)
-    expect(heroMark.props.size).toBe(48)
+    expect(heroMark.type).toBe('svg')
+    // The seat passes `size` as a box; the mark fits inside it by height only.
+    expect(heroMark.props.height).toBe(48)
+    expect(heroMark.props.width).toBeCloseTo(48 * 600.75 / 729, 5)
+    expect(heroMark.props.size).toBeUndefined()
+  })
+
+  it('inlines the wordmark that scripts/generate-wordmark.mjs produced', async () => {
+    const [svg, client] = await Promise.all([
+      readFile(path.join(projectRoot, 'build', 'agentbro-wordmark.svg'), 'utf8'),
+      readFile(path.join(projectRoot, 'packages', 'dsh-desktop-client-ui', 'client.js'), 'utf8')
+    ])
+    const pathData = /<path d="([^"]+)"/u.exec(svg)?.[1]
+    const viewBox = /viewBox="([^"]+)"/u.exec(svg)?.[1]
+    expect(pathData).toBeTruthy()
+    expect(viewBox).toBeTruthy()
+    // The wordmark is generated into build/ and copied into the bundle by hand;
+    // this keeps the two from drifting apart.
+    expect(client).toContain(`const BRAND_WORDMARK_PATH = "${pathData}"`)
+    expect(client).toContain('const BRAND_WORDMARK_VIEWBOX = { x: 0, y: 0, width: 84.7, height: 24 }')
   })
 })

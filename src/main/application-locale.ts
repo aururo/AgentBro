@@ -1,4 +1,5 @@
 import { parse } from 'yaml'
+import { BRAND_DISPLAY } from '../shared/brand'
 
 export type HarnessLocale = 'en' | 'zh'
 
@@ -14,7 +15,7 @@ const en = {
   'graphicsRecovery.restart': 'Restart without hardware acceleration',
 
   'windowRecovery.heading': 'Unable to display the window',
-  'windowRecovery.description': 'Please restart DSH Desktop to try again.',
+  'windowRecovery.description': `Please restart ${BRAND_DISPLAY} to try again.`,
   'common.restart': 'Restart'
 }
 
@@ -32,7 +33,7 @@ const messages: Record<HarnessLocale, Record<ApplicationMessageKey, string>> = {
     'graphicsRecovery.restart': '关闭硬件加速并重启',
 
     'windowRecovery.heading': '窗口暂时无法显示',
-    'windowRecovery.description': '请重新启动 DSH Desktop 后重试。',
+    'windowRecovery.description': `请重新启动 ${BRAND_DISPLAY} 后重试。`,
     'common.restart': '重新启动'
   }
 }

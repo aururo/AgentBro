@@ -3,9 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>DSH Desktop</title>
+    <title>AgentBro</title>
     <style>
-      :root { color-scheme: light; }
+      /* The window is created with `?theme=dark|light` from nativeTheme, and
+         `prefers-color-scheme` resolves from that same source, so the media
+         query below needs no inline script. Painting the matching background
+         in the first style pass avoids a white flash on dark launches. */
+      :root { color-scheme: light dark; }
       * { box-sizing: border-box; }
       html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
       body { background: #fbfbfb; }
@@ -18,14 +22,22 @@
         padding: 32px;
       }
       .markFrame { display: grid; place-items: center; width: 100%; transform: translateY(-80px); }
-      .mark { display: block; width: min(280px, 100%); height: auto; object-fit: contain; }
+      .mark { display: block; grid-area: 1 / 1; width: min(280px, 100%); height: auto; object-fit: contain; }
+      .markDark { display: none; }
+      @media (prefers-color-scheme: dark) {
+        body { background: #141416; }
+        .markLight { display: none; }
+        .markDark { display: block; }
+      }
     </style>
   </head>
   <body>
-    <main aria-label="DSH Desktop">
+    <main aria-label="AgentBro">
       <div class="markFrame" aria-hidden="true">
-        <!-- Original animation, including its embedded caption, is preserved byte-for-byte. -->
-        <img class="mark" src="startup-whale.gif" width="480" height="276" alt="" />
+        <!-- Same animated robot mark the boot cover uses, so startup reads as
+             one continuous animation instead of switching products. -->
+        <img class="mark markLight" src="dsh-loader.gif" width="640" height="360" alt="" />
+        <img class="mark markDark" src="dsh-loader-dark.gif" width="640" height="360" alt="" />
       </div>
     </main>
   </body>

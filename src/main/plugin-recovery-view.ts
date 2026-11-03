@@ -1,6 +1,7 @@
 import { buildRepairPlan, type RepairPlan } from './repair-policy'
 import { type PluginRecoveryCheck } from './plugin-recovery-market'
 import type { RuntimeSnapshot } from '../shared/contracts'
+import { BRAND_DISPLAY } from '../shared/brand'
 
 export type PluginRecoveryLocale = 'en' | 'zh'
 
@@ -236,7 +237,7 @@ export function buildPluginRecoveryViewModel(options: {
         : undefined
   return {
     locale,
-    brand: 'DSH Desktop',
+    brand: BRAND_DISPLAY,
     badge: zh ? '启动修复' : 'Startup recovery',
     heading: zh ? '启动遇到问题，DSH 暂时无法正常启动' : 'A startup error is preventing DSH from opening',
     summary: canRepair ? (zh ? '别着急，我们已找到可尝试的修复方案。展开查看后，同意方案可点击“一键修复”；也可以选择回退应用版本。' : 'We have a repair plan you can try. Review it below, then choose Repair now or roll back the app version.') : (zh ? '暂时无法自动修复。进入维修 Agent 模式后，将在安全模式下继续排查问题。' : 'Automatic repair is unavailable. The repair Agent will continue investigating in Safe Mode.'),
@@ -272,7 +273,7 @@ export function buildPluginRecoveryViewModel(options: {
     launchDirectoryLabel: zh ? '启动目录' : 'Launch directory',
     launchDirectory: snapshot.launchDirectory,
     rawError: snapshot.message,
-    quitLabel: zh ? '退出 DSH Desktop' : 'Quit DSH Desktop',
+    quitLabel: zh ? `退出 ${BRAND_DISPLAY}` : `Quit ${BRAND_DISPLAY}`,
     safeModeLabel: zh ? '让 Agent 帮我修' : 'Ask Agent to help',
     canUninstall: false,
     canRepair,

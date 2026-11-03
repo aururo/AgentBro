@@ -135,3 +135,38 @@ git reset --hard
 其他：`api.github.com` 可直连，但 `gh` 的设备码登录走 `github.com` 会被阻断，
 需要令牌时用 `gh auth login --with-token`（令牌只进本地凭据存储，不进聊天记录）。
 
+## 已知耦合
+
+品牌资产有三条生成脚本，它们裸用两个**没有写进 `devDependencies`** 的包。
+这是有意为之：与上游保持同一套约定（上游 `scripts/generate-loader-gifs.mjs`
+本身就裸用 `require('sharp')`，没声明过），改动面最小；代价是这两个包一旦从
+依赖树里消失，资产生成会直接报错而不是降级。
+
+| 包 | 用在哪 | 当前来源 | 缺失时的表现 |
+| --- | --- | --- | --- |
+| `sharp` | `scripts/generate-brand-assets.mjs`、`scripts/generate-app-icons.mjs`、`scripts/generate-loader-gifs.mjs` | 传递依赖：`@deepseek-ai/dsh-attachment-local` → `sharp@0.35.5`（另由本地 `dsh-image-generation` / `dsh-ppt` 复用同一份） | `npm run brand:generate` / `icons:generate` / `loader:generate` 抛 `Cannot find module 'sharp'` |
+| `fontkit` | `scripts/generate-wordmark.mjs` | 传递依赖：`@deepseek-ai/dsh-skill-office` → `@deepseek-ai/libreoffice-kit` → `fontkit@2.0.4` | `npm run wordmark:generate` 抛 `Cannot find module 'fontkit'` |
+
+两者的性质不同，值得分开看：
+
+- `sharp` 是上游已经在用的（图标、loader GIF 生成），本仓库只是沿用。
+- `fontkit` 是本仓库为了生成字标才引入的。如果哪天上游把 `dsh-skill-office`
+  换掉，`fontkit` 会随之消失——此时把 `opentype.js` 提名为直接依赖，或直接
+  保留已生成的 `build/agentbro-wordmark.svg`（它是入库资产，不影响运行），
+  都能解掉。
+
+`build/agentbro-wordmark.svg` 本身是**入库的静态资产**：字标已由
+`scripts/generate-wordmark.mjs` 从 Inter SemiBold 转曲，运行期不需要字体文件，
+也不需要 `fontkit`。生成脚本只用于改字重或改文案后重新出图。
+
+字标字体随仓库附带在 `scripts/fonts/`：
+
+| 文件 | 说明 |
+| --- | --- |
+| `inter-latin-600-normal.woff2` | Inter SemiBold 的 latin 子集，24 KB |
+| `Inter-OFL.txt` | SIL Open Font License 1.1 全文 |
+
+OFL 允许自由使用与再分发（包括嵌入到商业产品），条件是随附许可声明并保留
+字体名称「Inter」。本仓库两者都满足：许可文件在 `scripts/fonts/Inter-OFL.txt`，
+字标 SVG 的注释里写明了字体来源与名称。
+

@@ -1,4 +1,5 @@
 import type { WebHomePreview } from './state/web-home-import'
+import { BRAND_DISPLAY } from '../shared/brand'
 
 export type WebImportLocale = 'en' | 'zh'
 
@@ -44,7 +45,7 @@ export function buildWebImportViewModel(options: {
 
   return {
     locale: options.locale,
-    brand: 'DSH Desktop',
+    brand: BRAND_DISPLAY,
     badge: zh ? '导入' : 'Import',
     heading: zh ? '发现网页版数据' : 'Web Harness data found',
     summary: zh

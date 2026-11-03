@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>面板导航迁入标题栏 · 样式评审样张</title>
+<style>
+  /* ===================================================================
+     评审样张，非正式实现。
+     取值对齐上游主题：侧栏 #f9fafb / 深色 #1b1b1c，标题栏 40px，
+     侧栏默认 280px（上游 clamp 264–420），胶囊 30px（含 2px 内边距）。
+     =================================================================== */
+  :root {
+    --bg: #ffffff;
+    --app-bg: #edeff2;
+    --sidebar: #f9fafb;
+    --text: #16181d;
+    --text-2: #7d848f;
+    --text-3: #b0b4bb;
+    --border: #0000001f;
+    --border-2: #00000038;
+    --hover: #2631480f;
+    --accent: #4d6bfe;
+    --chip: #ffffff;
+    --caption-h: 40px;
+    --sb-w: 280px;
+    --nav-h: 26px;
+    --zoom: 1;
+  }
+  html[data-ds-dark-theme] {
+    --bg: #101012;
+    --app-bg: #08080a;
+    --sidebar: #1b1b1c;
+    --text: #f9fafb;
+    --text-2: #979da6;
+    --text-3: #5d6269;
+    --border: #ffffff29;
+    --border-2: #ffffff3d;
+    --hover: #ffffff14;
+    --chip: #17171a;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--app-bg);
+    color: var(--text);
+    font-family: "Segoe UI", -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    font-size: 13px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ---------- 评审工具条 ---------- */
+  .toolbar {
+    position: sticky; top: 0; z-index: 100;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 14px;
+    padding: 10px 20px;
+    background: color-mix(in srgb, var(--app-bg) 88%, transparent);
+    border-bottom: 1px solid var(--border);
+    backdrop-filter: blur(10px);
+  }
+  .toolbar h1 { margin: 0 6px 0 0; font-size: 13px; font-weight: 500; letter-spacing: .01em; }
+  .group { display: flex; align-items: center; gap: 0; border: 1px solid var(--border); border-radius: 7px; overflow: hidden; }
+  .group > span { padding: 0 8px 0 10px; color: var(--text-2); font-size: 12px; }
+  .group button {
+    font: inherit; font-size: 12px; padding: 5px 10px; border: 0; cursor: pointer;
+    background: transparent; color: var(--text-2); border-left: 1px solid var(--border);
+  }
+  .group button:first-child { border-left: 0; }
+  .group button[aria-pressed="true"] { background: var(--hover); color: var(--text); font-weight: 500; }
+  .group button:hover { color: var(--text); }
+  .readout { margin-left: auto; display: flex; gap: 14px; font-size: 12px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+  .readout b { color: var(--text); font-weight: 500; }
+  .readout .warn { color: #ba7517; }
+
+  /* ---------- 舞台与窗口 ---------- */
+  .stage { padding: 20px; display: flex; justify-content: flex-start; }
+  .scaler { transform-origin: top left; }
+
+  .window {
+    position: relative;
+    width: var(--win-w, 1280px);
+    height: 720px;
+    display: grid;
+    grid-template-columns: var(--sb-w) minmax(0, 1fr);
+    padding-top: var(--caption-h);
+    background: var(--bg);
+    border-radius: 9px;
+    overflow: hidden;
+    box-shadow: 0 10px 30px rgba(0,0,0,.14), 0 0 0 1px var(--border);
+  }
+
+  /* 标题栏：上游是 .frame::before 的拖拽伪元素，这里用实体 div 便于标注。
+     正式实现里胶囊是 position:fixed，样张改成 absolute 以便被窗口裁切。 */
+  .caption {
+    position: absolute; inset: 0 0 auto 0; height: var(--caption-h);
+    background: var(--sidebar);
+    display: flex; align-items: center;
+    user-select: none;
+  }
+  .caption::after {
+    content: ""; position: absolute; inset: 0; -webkit-app-region: drag; pointer-events: none;
+  }
+  .caption-left { position: absolute; left: 12px; display: flex; align-items: center; gap: 6px; }
+  .win-btn {
+    width: 28px; height: 28px; border: 0; border-radius: 6px; padding: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: transparent; color: var(--text-2); cursor: pointer;
+  }
+  .win-btn:hover { background: var(--hover); color: var(--text); }
+  .menubar { position: absolute; left: 48px; display: flex; gap: 2px; }
+  .window[data-collapsed="true"] .menubar { left: 84px; }
+  .menubar button {
+    font: inherit; font-size: 13px; height: 26px; padding: 0 9px; border: 0; border-radius: 6px;
+    background: transparent; color: var(--text-2); cursor: default;
+  }
+  .menubar button:hover { background: var(--hover); color: var(--text); }
+
+  .controls { position: absolute; right: 0; top: 0; height: var(--caption-h); display: flex; }
+  .controls button {
+    width: 46px; height: var(--caption-h); border: 0; padding: 0; background: transparent;
+    color: var(--text-2); cursor: default; display: inline-flex; align-items: center; justify-content: center;
+  }
+  .controls button:hover { background: var(--hover); }
+  .controls button.close:hover { background: #c42b1c; color: #fff; }
+
+  /* ---------- 侧栏 ---------- */
+  /* 正式实现里胶囊是 position:fixed，不受侧栏 overflow 影响；
+     样张改用 absolute，因此这里不能裁切，否则胶囊会被切掉。 */
+  .sidebar-col { min-width: 0; background: var(--sidebar); }
+  .window[data-collapsed="true"] { --sb-w: 0px; }
+  .window[data-collapsed="true"] .sidebar-col { background: transparent; }
+
+  .sb {
+    height: 100%; width: 100%;
+    display: flex; flex-direction: column;
+    padding: 6px 12px; box-sizing: border-box;
+    color: var(--text); font-size: 14px;
+  }
+  .window[data-collapsed="true"] .sb { padding: 0; }
+  .window[data-collapsed="true"] .logo-row,
+  .window[data-collapsed="true"] .new-session,
+  .window[data-collapsed="true"] .region,
+  .window[data-collapsed="true"] .foot { display: none; }
+
+  .logo-row { height: 40px; display: flex; align-items: center; flex: none; }
+  .brand { display: inline-flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 500; letter-spacing: -.01em; }
+  .brand-mark {
+    width: 22px; height: 22px; border-radius: 6px; background: var(--text); color: var(--sidebar);
+    display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 500;
+  }
+
+  .new-session {
+    flex: none; height: 38px; margin: 8px 2px 12px; padding: 8px 12px;
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+    font: inherit; font-size: 14px; font-weight: 500;
+    color: var(--text); background: var(--chip);
+    border: .5px solid var(--border); border-radius: 8px; cursor: pointer;
+  }
+  .new-session:hover { background: var(--hover); }
+
+  /* 会话区：面板导航搬走后，这里吃满回收的 158px */
+  .region { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: 2px; padding-top: 2px; }
+  .region-head { display: flex; align-items: center; justify-content: space-between; padding: 6px 8px 4px; font-size: 12px; color: var(--text-2); }
+  .session {
+    display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 8px;
+    border-radius: 8px; color: var(--text); cursor: pointer; white-space: nowrap;
+  }
+  .session:hover { background: var(--hover); }
+  .session.active { background: var(--hover); }
+  .session span { overflow: hidden; text-overflow: ellipsis; }
+  .session em { margin-left: auto; font-style: normal; font-size: 12px; color: var(--text-3); }
+
+  .foot { flex: none; padding-top: 6px; }
+  .setting-row { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 8px; border-radius: 8px; color: var(--text); cursor: pointer; }
+  .setting-row:hover { background: var(--hover); }
+
+  /* ---------- 面板导航（核心对象） ----------
+     结构对齐上游：[data-dsh-sidebar-root] > nav.panelList > button*
+     只有 data-dsh-caption-nav 存在时才离开原位，缺省等于现状。 */
+  .panel-list {
+    display: flex; flex-direction: column; gap: 2px; margin: 0 0 8px; padding: 0;
+  }
+  .panel-row {
+    display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 7px 8px; margin: 0 2px;
+    font: inherit; font-size: 14px; line-height: 22px; text-align: left;
+    color: var(--text); background: transparent; border: 0; border-radius: 8px; cursor: pointer;
+  }
+  .panel-row:hover { background: var(--hover); }
+  .panel-row[aria-current="page"] { background: var(--hover); }
+  .panel-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .more-anchor { display: flex; flex-direction: column; position: relative; }
+
+  html[data-dsh-caption-nav] .panel-list {
+    position: absolute;
+    top: calc((var(--caption-h) - var(--nav-h) - 4px) / 2);
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 18;
+    flex-direction: row;
+    align-items: center;
+    gap: 2px;
+    margin: 0;
+    padding: 2px;
+    border-radius: 9px;
+    border: .5px solid transparent;
+    background: transparent;
+  }
+  /* 变体 A：实底胶囊 */
+  html[data-nav-style="solid"][data-dsh-caption-nav] .panel-list {
+    background: var(--bg);
+    border-color: var(--border);
+  }
+  html[data-dsh-caption-nav] .panel-row {
+    min-height: var(--nav-h); height: var(--nav-h); margin: 0; padding: 0 9px;
+    border-radius: 6px; font-size: 13px; line-height: 1; gap: 6px;
+  }
+  /* 变体 B：悬停才抬起 */
+  html[data-nav-style="ghost"][data-dsh-caption-nav] .panel-list:hover {
+    background: var(--bg);
+    border-color: var(--border);
+  }
+
+  /* 档位：仅图标 */
+  html[data-dsh-caption-nav="icons"] .panel-title { display: none; }
+  html[data-dsh-caption-nav="icons"] .panel-row { padding: 0 7px; }
+
+  /* 侧栏收起时上游不渲染文字，这里同步 */
+  .window[data-collapsed="true"] .panel-title { display: none; }
+  .window[data-collapsed="true"] .panel-row { padding: 0 7px; }
+
+  /* ---------- 中央区 ---------- */
+  .center { min-width: 0; display: flex; flex-direction: column; background: var(--bg); }
+  .center-head { height: 40px; display: flex; align-items: center; padding: 0 20px; color: var(--text-2); font-size: 13px; }
+  .hero { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; }
+  .hero-mark {
+    width: 46px; height: 46px; border-radius: 13px; background: var(--hover);
+    display: flex; align-items: center; justify-content: center; color: var(--text);
+  }
+  .hero h2 { margin: 0; font-size: 20px; font-weight: 500; letter-spacing: -.01em; }
+  .hero p { margin: 0; color: var(--text-2); font-size: 13px; }
+  .composer {
+    margin: 0 24px 20px; padding: 12px 14px; border: .5px solid var(--border); border-radius: 12px;
+    color: var(--text-3); display: flex; align-items: center; gap: 10px; background: var(--chip);
+  }
+  .composer .send { margin-left: auto; width: 26px; height: 26px; border-radius: 7px; background: var(--hover); display: inline-flex; align-items: center; justify-content: center; color: var(--text-2); }
+
+  /* ---------- 更多菜单 ---------- */
+  .more-menu {
+    position: absolute; top: calc(100% + 6px); left: 50%; transform: translateX(-50%);
+    width: 260px; padding: 6px; border-radius: 10px;
+    background: var(--bg); border: .5px solid var(--border);
+    box-shadow: 0 8px 24px rgba(0,0,0,.16);
+    display: none; z-index: 30;
+  }
+  .more-menu[data-open="true"] { display: block; }
+  .more-menu div { height: 32px; display: flex; align-items: center; padding: 0 9px; border-radius: 7px; color: var(--text); font-size: 13px; }
+  .more-menu div:hover { background: var(--hover); }
+  .more-menu hr { border: 0; border-top: .5px solid var(--border); margin: 5px 2px; }
+
+  /* ---------- 标注层 ---------- */
+  .anno { display: none; position: absolute; pointer-events: none; z-index: 60; }
+  html[data-annotate] .anno { display: block; }
+  .anno-band { left: 0; right: 0; top: 0; height: var(--caption-h); border-bottom: 1px dashed var(--accent); }
+  .anno-band b, .anno-pill b, .anno-gain b {
+    position: absolute; font-size: 11px; font-weight: 500; padding: 1px 5px; border-radius: 4px;
+    background: var(--accent); color: #fff; white-space: nowrap;
+  }
+  .anno-band b { right: 8px; bottom: 2px; }
+  .anno-pill { border: 1px dashed var(--accent); border-radius: 9px; }
+  .anno-pill b { left: 50%; transform: translateX(-50%); top: -18px; }
+  .anno-gain { left: 4px; width: 2px; background: var(--accent); }
+  .anno-gain b { left: 8px; top: 50%; transform: translateY(-50%); }
+  .anno-col { border-left: 1px dashed var(--accent); top: 0; bottom: 0; }
+</style>
+</head>
+<body>
+
+<div class="toolbar">
+  <h1>面板导航迁入标题栏 · 样式评审</h1>
+
+  <div class="group" role="group" aria-label="宽度预设">
+    <span>宽度</span>
+    <button data-w="1280" aria-pressed="true">1280</button>
+    <button data-w="1024" aria-pressed="false">1024</button>
+    <button data-w="860" aria-pressed="false">860</button>
+    <button data-w="700" aria-pressed="false">700</button>
+    <button data-w="560" aria-pressed="false">560</button>
+  </div>
+
+  <div class="group" role="group" aria-label="胶囊样式">
+    <span>胶囊</span>
+    <button data-style="ghost" aria-pressed="true">悬停抬起</button>
+    <button data-style="solid" aria-pressed="false">实底描边</button>
+  </div>
+
+  <div class="group" role="group" aria-label="侧栏状态">
+    <span>侧栏</span>
+    <button data-collapse="false" aria-pressed="true">展开</button>
+    <button data-collapse="true" aria-pressed="false">收起</button>
+  </div>
+
+  <div class="group" role="group" aria-label="其他">
+    <button id="themeBtn" aria-pressed="false">深色主题</button>
+    <button id="annoBtn" aria-pressed="false">标注</button>
+  </div>
+
+  <div class="readout">
+    <span>档位 <b id="ro-mode">bar</b></span>
+    <span>可用 <b id="ro-avail">—</b></span>
+    <span>胶囊 <b id="ro-pill">—</b></span>
+  </div>
+</div>
+
+<div class="stage">
+  <div class="scaler" id="scaler">
+    <div class="window" id="win" data-collapsed="false">
+
+      <div class="caption">
+        <div class="caption-left">
+          <button class="win-btn" id="toggle" aria-label="收起侧边栏" title="收起侧边栏">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2">
+              <rect x="1.5" y="2.5" width="13" height="11" rx="2"/><path d="M6 2.5v11"/>
+            </svg>
+          </button>
+          <button class="win-btn" id="captionNew" aria-label="新建会话" title="新建会话" hidden>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round">
+              <path d="M8 3v10M3 8h10"/>
+            </svg>
+          </button>
+        </div>
+
+        <div class="menubar" id="menubar" role="menubar">
+          <button type="button" role="menuitem">应用</button>
+          <button type="button" role="menuitem">编辑</button>
+        </div>
+
+        <div class="controls" id="controls">
+          <button type="button" aria-label="最小化"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M0 5h10" stroke="currentColor" stroke-width="1"/></svg></button>
+          <button type="button" aria-label="最大化"><svg width="10" height="10" viewBox="0 0 10 10"><rect x=".5" y=".5" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1"/></svg></button>
+          <button type="button" class="close" aria-label="关闭"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M0 0l10 10M10 0L0 10" stroke="currentColor" stroke-width="1"/></svg></button>
+        </div>
+      </div>
+
+      <div class="sidebar-col">
+        <div class="sb" data-dsh-sidebar-root data-dsh-sidebar-wide="true">
+
+          <div class="logo-row">
+            <span class="brand"><span class="brand-mark">A</span>AgentBro</span>
+          </div>
+
+          <button class="new-session" type="button">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round">
+              <path d="M8 3v10M3 8h10"/>
+            </svg>
+            新会话
+          </button>
+
+          <nav class="panel-list" aria-label="全局面板">
+            <button class="panel-row" type="button" aria-current="page">
+              <span class="glyph"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="2" y="2" width="5" height="5" rx="1.2"/><rect x="9" y="2" width="5" height="5" rx="1.2"/><rect x="2" y="9" width="5" height="5" rx="1.2"/><rect x="9" y="9" width="5" height="5" rx="1.2"/></svg></span>
+              <span class="panel-title">工作台</span>
+            </button>
+            <button class="panel-row" type="button">
+              <span class="glyph"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M2.5 6.5l5.5-3 5.5 3-5.5 3z"/><path d="M2.5 9.5l5.5 3 5.5-3"/></svg></span>
+              <span class="panel-title">插件</span>
+            </button>
+            <button class="panel-row" type="button">
+              <span class="glyph"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><circle cx="8" cy="8" r="5.6"/><path d="M8 4.8V8l2.3 1.6"/></svg></span>
+              <span class="panel-title">自动化任务</span>
+            </button>
+            <div class="more-anchor">
+              <button class="panel-row" type="button" id="moreBtn" aria-haspopup="menu" aria-expanded="false">
+                <span class="glyph"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><rect x="2.2" y="2.2" width="11.6" height="11.6" rx="2.4"/><path d="M8 5.4v5.2M5.4 8h5.2"/></svg></span>
+                <span class="panel-title">更多</span>
+              </button>
+              <div class="more-menu" id="moreMenu" role="menu">
+                <div role="menuitem">工作台</div>
+                <div role="menuitem">插件</div>
+                <div role="menuitem">自动化任务</div>
+                <hr />
+                <div role="menuitem">全部面板设置…</div>
+              </div>
+            </div>
+          </nav>
+
+          <div class="region">
+            <div class="region-head"><span>会话</span><span>今天</span></div>
+            <div class="session active"><span>重构 harness 启动参数</span><em>10:02</em></div>
+            <div class="session"><span>AgentBro 品牌资源替换</span><em>09:41</em></div>
+            <div class="session"><span>Windows 标题栏拖拽区修复</span><em>昨天</em></div>
+            <div class="session"><span>打包体积排查</span><em>昨天</em></div>
+            <div class="session"><span>插件市场安装失败</span><em>周一</em></div>
+            <div class="session"><span>安全模式恢复流程梳理</span><em>周一</em></div>
+            <div class="session"><span>移动端连接提示文案</span><em>10-31</em></div>
+            <div class="session"><span>自动更新签名验证</span><em>10-30</em></div>
+          </div>
+
+          <div class="foot">
+            <div class="setting-row">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><circle cx="8" cy="8" r="2.4"/><path d="M8 1.8v1.6M8 12.6v1.6M1.8 8h1.6M12.6 8h1.6M3.6 3.6l1.1 1.1M11.3 11.3l1.1 1.1M12.4 3.6l-1.1 1.1M4.7 11.3l-1.1 1.1"/></svg>
+              设置
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="center">
+        <div class="center-head">AgentBro</div>
+        <div class="hero">
+          <div class="hero-mark">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="4" y="7" width="16" height="12" rx="4"/><path d="M12 3v4M9 13h.01M15 13h.01M9.5 16.5h5"/>
+            </svg>
+          </div>
+          <h2>开始新的对话</h2>
+          <p>描述你的任务，AgentBro 会自己拆步骤、跑命令、改文件。</p>
+        </div>
+        <div class="composer">
+          <span>给 AgentBro 发消息…</span>
+          <span class="send">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 13V3M4 7l4-4 4 4"/></svg>
+          </span>
+        </div>
+      </div>
+
+      <div class="anno anno-band"><b>标题栏 40px</b></div>
+      <div class="anno anno-pill" id="annoPill"><b id="annoPillText">胶囊</b></div>
+      <div class="anno anno-gain" id="annoGain"><b>回收 158px</b></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const win = document.getElementById('win')
+  const scaler = document.getElementById('scaler')
+  const nav = document.querySelector('[data-dsh-sidebar-root] > nav')
+  const root = document.documentElement
+
+  let zoom = 1
+  let presetWidth = 1280
+
+  function setPressed(groupSelector, active) {
+    document.querySelectorAll(groupSelector + ' button').forEach(function (b) {
+      b.setAttribute('aria-pressed', String(b === active))
+    })
+  }
+
+  document.querySelectorAll('[data-w]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      presetWidth = Number(b.dataset.w)
+      setPressed('.group:nth-of-type(1)', b)
+      layout()
+    })
+  })
+
+  document.querySelectorAll('[data-style]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      root.dataset.navStyle = b.dataset.style
+      setPressed('.group:nth-of-type(2)', b)
+      measure()
+    })
+  })
+
+  document.querySelectorAll('[data-collapse]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      const collapsed = b.dataset.collapse === 'true'
+      win.dataset.collapsed = String(collapsed)
+      win.querySelector('[data-dsh-sidebar-root]').setAttribute('data-dsh-sidebar-wide', String(!collapsed))
+      document.getElementById('captionNew').hidden = !collapsed
+      setPressed('.group:nth-of-type(3)', b)
+      measure()
+    })
+  })
+
+  document.getElementById('themeBtn').addEventListener('click', function () {
+    const on = !root.hasAttribute('data-ds-dark-theme')
+    if (on) root.setAttribute('data-ds-dark-theme', '')
+    else root.removeAttribute('data-ds-dark-theme')
+    this.setAttribute('aria-pressed', String(on))
+    this.textContent = on ? '浅色主题' : '深色主题'
+    measure()
+  })
+
+  document.getElementById('annoBtn').addEventListener('click', function () {
+    const on = !root.hasAttribute('data-annotate')
+    if (on) root.setAttribute('data-annotate', '')
+    else root.removeAttribute('data-annotate')
+    this.setAttribute('aria-pressed', String(on))
+    measure()
+  })
+
+  document.getElementById('moreBtn').addEventListener('click', function (event) {
+    event.stopPropagation()
+    const menu = document.getElementById('moreMenu')
+    const open = menu.dataset.open !== 'true'
+    menu.dataset.open = String(open)
+    this.setAttribute('aria-expanded', String(open))
+  })
+  document.addEventListener('click', function () {
+    const menu = document.getElementById('moreMenu')
+    menu.dataset.open = 'false'
+    document.getElementById('moreBtn').setAttribute('aria-expanded', 'false')
+  })
+
+  document.getElementById('toggle').addEventListener('click', function () {
+    const btn = document.querySelector('[data-collapse="true"]')
+    if (win.dataset.collapsed === 'true') document.querySelector('[data-collapse="false"]').click()
+    else btn.click()
+  })
+
+  function layout() {
+    win.style.setProperty('--win-w', presetWidth + 'px')
+    const available = document.querySelector('.stage').clientWidth - 40
+    zoom = Math.min(1, available / presetWidth)
+    win.style.transform = 'scale(' + zoom + ')'
+    scaler.style.width = presetWidth * zoom + 'px'
+    scaler.style.height = 720 * zoom + 'px'
+    measure()
+  }
+
+  /* 与正式实现同一套算法：量测可用带，从最宽档逐级降级 */
+  function measure() {
+    const z = zoom
+    const toggle = document.getElementById('toggle').getBoundingClientRect()
+    const menu = document.getElementById('menubar').getBoundingClientRect()
+    const controls = document.getElementById('controls').getBoundingClientRect()
+    const leftLimit = Math.max(toggle.right, menu.right) + 10 * z
+    const rightLimit = controls.left - 10 * z
+
+    const modes = win.dataset.collapsed === 'true' ? ['icons'] : ['bar', 'icons']
+    let mode = 'off'
+    let rect = null
+    for (let i = 0; i < modes.length; i++) {
+      root.dataset.dshCaptionNav = modes[i]
+      rect = nav.getBoundingClientRect()
+      if (rect.left >= leftLimit && rect.right <= rightLimit) { mode = modes[i]; break }
+    }
+    if (mode === 'off') {
+      delete root.dataset.dshCaptionNav
+      rect = nav.getBoundingClientRect()
+    }
+
+    const avail = Math.round((rightLimit - leftLimit) / z)
+    document.getElementById('ro-mode').textContent = mode === 'off' ? '退回侧栏' : mode
+    document.getElementById('ro-mode').className = mode === 'off' ? 'warn' : ''
+    document.getElementById('ro-avail').textContent = avail + 'px'
+    document.getElementById('ro-pill').textContent = Math.round(rect.width / z) + 'px'
+
+    const annoPill = document.getElementById('annoPill')
+    const winRect = win.getBoundingClientRect()
+    if (mode === 'off') {
+      annoPill.style.display = 'none'
+    } else {
+      annoPill.style.display = ''
+      annoPill.style.left = (rect.left - winRect.left) / z + 'px'
+      annoPill.style.top = (rect.top - winRect.top) / z + 'px'
+      annoPill.style.width = rect.width / z + 'px'
+      annoPill.style.height = rect.height / z + 'px'
+      document.getElementById('annoPillText').textContent =
+        '胶囊 ' + Math.round(rect.width / z) + ' × ' + Math.round(rect.height / z)
+    }
+
+    const region = document.querySelector('.region')
+    const gain = document.getElementById('annoGain')
+    if (region && win.dataset.collapsed !== 'true') {
+      const r = region.getBoundingClientRect()
+      gain.style.display = ''
+      gain.style.top = (r.top - winRect.top) / z + 'px'
+      gain.style.height = r.height / z + 'px'
+    } else {
+      gain.style.display = 'none'
+    }
+  }
+
+  window.addEventListener('resize', layout)
+  layout()
+</script>
+</body>
+</html>

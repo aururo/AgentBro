@@ -38,7 +38,7 @@ function replaceIconLink(contents, file) {
     && matches.some((link) => link.includes('media="(prefers-color-scheme: light)"'))
   if (matches.length !== 1 && !themedLinks) {
     throw new Error(
-      `Could not update DSH Desktop branding in ${file}: expected one icon link or a light/dark pair, found ${String(matches.length)}`
+      `Could not update AgentBro branding in ${file}: expected one icon link or a light/dark pair, found ${String(matches.length)}`
     )
   }
   return themedLinks
@@ -66,7 +66,7 @@ function replaceManifestIcon(contents, file) {
       || /^(?:\.\/|\/)?(?:favicon\.svg|icon-(?:192|512|maskable-512)\.png)$/u.test(icon.src))
   const first = icons.findIndex(isBrandIcon)
   if (first === -1) {
-    throw new Error(`Could not update DSH Desktop branding in ${file}: no icon entry to replace`)
+    throw new Error(`Could not update AgentBro branding in ${file}: no icon entry to replace`)
   }
   manifest.icons = icons.flatMap((icon, index) => {
     if (!isBrandIcon(icon)) return [icon]
@@ -90,7 +90,7 @@ await writeFile(
   replaceManifestIcon(manifest, path.relative(projectRoot, manifestPath))
 )
 
-console.log(`Installed DSH Desktop brand assets: ${[
+console.log(`Installed AgentBro brand assets: ${[
   destination,
   lightDestination,
   darkDestination

@@ -1,5 +1,6 @@
 import { renderUpdateNotes } from './update-notes-view'
 import { popupReleaseNotes } from '../shared/update-release-notes'
+import { BRAND_DISPLAY, BRAND_VERSION_NOTE_EN, BRAND_VERSION_NOTE_ZH } from '../shared/brand'
 import { ipcRenderer } from 'electron'
 import type { AvailableRelease, UpdateStatus } from '../shared/contracts'
 import {
@@ -145,7 +146,7 @@ function render(): void {
   card.setAttribute('role', centered ? 'dialog' : 'status')
   if (centered) card.setAttribute('aria-modal', 'false')
   card.setAttribute('aria-live', 'polite')
-  card.setAttribute('aria-label', locale === 'zh' ? 'DSH Desktop 更新' : 'DSH Desktop update')
+  card.setAttribute('aria-label', locale === 'zh' ? `${BRAND_DISPLAY} 更新` : `${BRAND_DISPLAY} update`)
 
   const row = element('div', 'row')
   const badge = appIcon()
@@ -156,7 +157,7 @@ function render(): void {
   const headline = updateHeadline(status, locale)
   const body = element('div', 'body')
   const title = element('p', 'title')
-  title.textContent = status.phase === 'up-to-date' ? `DSH Desktop v${status.currentVersion}` : headline.title
+  title.textContent = status.phase === 'up-to-date' ? `${BRAND_DISPLAY} v${status.currentVersion}` : headline.title
   body.appendChild(title)
   row.appendChild(body)
 
@@ -370,7 +371,7 @@ function renderAbout(): void {
   card.tabIndex = -1
   card.setAttribute('role', 'dialog')
   card.setAttribute('aria-modal', 'false')
-  card.setAttribute('aria-label', zh ? '关于 DSH Desktop' : 'About DSH Desktop')
+  card.setAttribute('aria-label', zh ? `关于 ${BRAND_DISPLAY}` : `About ${BRAND_DISPLAY}`)
 
   const header = element('div', 'about-header')
   header.appendChild(appIcon())
@@ -397,7 +398,7 @@ function renderAbout(): void {
   header.appendChild(switcher)
   card.appendChild(header)
   const title = element('h2', 'about-title')
-  title.textContent = 'DSH Desktop'
+  title.textContent = BRAND_DISPLAY
   card.appendChild(title)
   const version = element('p', 'about-line')
   version.textContent = `v${info.desktopVersion} (${zh ? '内置' : 'bundled'} Harness ${info.harnessVersion} `
@@ -407,7 +408,7 @@ function renderAbout(): void {
   const tooltip = element('span', 'tooltip')
   tooltip.id = 'harness-version-hint'
   tooltip.setAttribute('role', 'tooltip')
-  tooltip.textContent = zh ? 'Harness 随 DSH Desktop 更新。' : 'Harness is updated with DSH Desktop.'
+  tooltip.textContent = zh ? BRAND_VERSION_NOTE_ZH : BRAND_VERSION_NOTE_EN
   hint.setAttribute('aria-describedby', tooltip.id)
   hint.appendChild(tooltip)
   version.append(hint, document.createTextNode(')'))

@@ -7,7 +7,7 @@
       http-equiv="Content-Security-Policy"
       content="default-src 'none'; img-src 'self' file:; style-src 'unsafe-inline'; script-src 'unsafe-inline'"
     />
-    <title>DSH Desktop Safe Mode</title>
+    <title>AgentBro Safe Mode</title>
     <style>
       :root {
         /* Same reading column as the recovery page. */
@@ -216,7 +216,7 @@
       const model = JSON.parse(params.get('state') || '{}')
       document.documentElement.lang = model.locale === 'zh' ? 'zh-CN' : 'en'
       document.documentElement.dataset.theme = params.get('theme') || 'system'
-      document.title = `${model.badge || 'Safe Mode'} · ${model.brand || 'DSH Desktop'}`
+      document.title = `${model.badge || 'Safe Mode'} · ${model.brand || 'AgentBro'}`
       const setText = (id, value) => { const node = document.getElementById(id); if (node) node.textContent = value || '' }
       setText('page-title', model.locale === 'zh' ? '维修模式 · 安全模式' : 'Repair · Safe Mode')
       setText('heading', model.heading)

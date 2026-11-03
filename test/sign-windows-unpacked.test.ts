@@ -78,7 +78,7 @@ describe('sign-windows-unpacked', () => {
       '--tsretrywait',
       '10',
       '--name',
-      'DSH Desktop',
+      'AgentBro',
       '--url',
       'https://www.dshdesktop.com',
       'C:\\test\\app.exe'

@@ -3,20 +3,20 @@ const packageJson = require('./package.json')
 module.exports = {
   ...packageJson.build,
   appId: 'io.dsh.desktop.dev',
-  productName: 'DSH Desktop Dev',
+  productName: 'AgentBro Dev',
   directories: {
     ...packageJson.build.directories,
     output: 'dist-dev'
   },
   extraMetadata: {
     name: 'dsh-desktop-dev',
-    productName: 'DSH Desktop Dev',
+    productName: 'AgentBro Dev',
     dshDesktopChannel: 'development'
   },
-  artifactName: 'dsh-desktop-dev-${os}-${arch}.${ext}',
+  artifactName: 'agentbro-dev-${os}-${arch}.${ext}',
   nsis: {
     ...packageJson.build.nsis,
-    artifactName: 'dsh-desktop-dev-windows-${arch}-setup.${ext}'
+    artifactName: 'agentbro-dev-windows-${arch}-setup.${ext}'
   },
   publish: null
 }
