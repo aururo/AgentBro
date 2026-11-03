@@ -3,29 +3,32 @@
     把上游 dataelement/dsh-desktop 的新增提交合入当前分支。
 
 .DESCRIPTION
-    把上游 dataelement/dsh-desktop 的新增提交合入当前分支。
+    把上游 dataelement/dsh-desktop 的新增提交合入指定分支。
 
     AgentBro 是上游的 GitHub fork，网页端也有 Sync fork 按钮；
     本脚本走本地 upstream remote，便于先看清领先/落后再决定合并策略。
 
-    分支模型：
-      main        —— 产品主线，跟随 origin/main
-      feature/*   —— 二次开发分支
+    仓库分支拓扑：
+      main                    纯上游镜像，与 upstream/main 一致，不写业务定制
+      feature/agentbro-custom 定制主线，承载 agentbro 工具与全部业务定制
 
-    默认用 merge 而不是 rebase：main 是长期共享分支，rebase 会改写已推送历史。
-    尚未推送的 feature 分支若想保持线性历史，可加 -Rebase。
+    常规用法是把上游合进定制主线：
+      ./agentbro/sync-upstream.ps1 -Branch feature/agentbro-custom
+
+    默认用 merge 而不是 rebase：共享分支 rebase 会改写已推送历史，
+    尚未推送的主题分支若想保持线性历史，可加 -Rebase。
 
 .PARAMETER Branch
     要同步的本地分支，默认当前分支。
 
 .PARAMETER Rebase
-    用 rebase 代替 merge，仅建议用于尚未推送的 feature 分支。
+    用 rebase 代替 merge，仅建议用于尚未推送的主题分支。
 
 .PARAMETER Push
     同步完成后把该分支推送到 origin。
 
 .EXAMPLE
-    ./agentbro/sync-upstream.ps1
+    ./agentbro/sync-upstream.ps1 -Branch feature/agentbro-custom
     ./agentbro/sync-upstream.ps1 -Branch feature/xxx -Rebase
     ./agentbro/sync-upstream.ps1 -Push
 #>

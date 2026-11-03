@@ -23,16 +23,17 @@
 ## 分支模型
 
 ```
-main                    上游基线镜像，跟随 upstream/main，不写业务定制
-└─ feature/agentbro-custom   定制主线，长期存在，承载全部定制
-   └─ feature/<topic>        主题分支，从定制主线切出，做完合回定制主线
+main                       纯上游镜像，与 upstream/main 完全一致（diff 为空），跟踪 upstream/main
+└─ feature/agentbro-custom 定制主线，长期存在：agentbro 工具 + 全部业务定制
+   └─ feature/<topic>       主题分支，从定制主线切出，做完合回定制主线
 ```
 
-`main` 与 `upstream/main` 的差集只有 `agentbro/` 这套工具本身，业务定制全部落在
-`feature/agentbro-custom`。这样同步上游永远作用在定制主线上，冲突面只剩真正被你改过的文件。
+`main` 不写任何业务代码，它只是上游的实时投影：上游一提交，`main` 就能快进到同一位置，
+`git diff upstream/main..main` 永远是空的。全部定制收敛在 `feature/agentbro-custom`，
+`git diff upstream/main..feature/agentbro-custom` 就是 AgentBro 相对上游的完整差异。
 
 ```powershell
-# 同步上游到定制主线（合并上游 → 定制主线）
+# 日常：同步上游到定制主线（合并 upstream/main → 定制主线）
 ./agentbro/sync-upstream.ps1 -Branch feature/agentbro-custom
 
 # 从定制主线切一条主题分支（会先同步上游再切）
@@ -43,7 +44,16 @@ git switch feature/agentbro-custom
 git merge --no-ff feature/chat-panel
 ```
 
-用 `git diff upstream/main..feature/agentbro-custom` 可以随时看清定制主线相对上游的全部差异。
+`main` 的快进（上游更新后保持镜像）：
+
+```powershell
+git switch main
+git pull                      # main 跟踪 upstream/main，直接快进
+git push origin main          # 同步回 fork 的 main
+```
+
+GitHub 网页的 `Sync fork` 也可以用：它把上游合进 fork 的 `main`，之后本地
+`git fetch origin` 再把 `origin/main` 合进定制主线即可，工具链会自动合 `upstream/main`，两者等价。
 
 ## 同步上游
 
