@@ -22,11 +22,28 @@
 
 ## 分支模型
 
-- `main` —— 产品主线，跟随 `origin/main`
-- `feature/*` —— 二次开发分支，完成后合回 `main`
+```
+main                    上游基线镜像，跟随 upstream/main，不写业务定制
+└─ feature/agentbro-custom   定制主线，长期存在，承载全部定制
+   └─ feature/<topic>        主题分支，从定制主线切出，做完合回定制主线
+```
 
-上游快照保持干净：`main` 与 `upstream/main` 的差异就是我们的全部定制，
-`git diff upstream/main..main` 可以随时看清自己改了什么。
+`main` 与 `upstream/main` 的差集只有 `agentbro/` 这套工具本身，业务定制全部落在
+`feature/agentbro-custom`。这样同步上游永远作用在定制主线上，冲突面只剩真正被你改过的文件。
+
+```powershell
+# 同步上游到定制主线（合并上游 → 定制主线）
+./agentbro/sync-upstream.ps1 -Branch feature/agentbro-custom
+
+# 从定制主线切一条主题分支（会先同步上游再切）
+./agentbro/new-topic.ps1 -Name chat-panel
+
+# 主题分支做完后合回定制主线
+git switch feature/agentbro-custom
+git merge --no-ff feature/chat-panel
+```
+
+用 `git diff upstream/main..feature/agentbro-custom` 可以随时看清定制主线相对上游的全部差异。
 
 ## 同步上游
 
