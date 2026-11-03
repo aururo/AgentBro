@@ -23,8 +23,11 @@ Verification: behavior tests for local serving, traversal and origin rejection, 
 
 The host cover applies during HTML bootstrapping and client activation, on both
 `dsh-desktop://harness/` and legacy loopback HTTP pages. It paints the same
-`startup-whale.gif` as the startup page, in a preload-owned shadow root,
-because plugin slots are not yet available. It does not change Profile composition,
+loader animation as the startup page (`dsh-loader.gif`, with `dsh-loader-dark.gif`
+in dark mode), in a preload-owned shadow root, because plugin slots are not yet
+available. The assets are requested over the desktop protocol, so they have to be
+in the packaged resources directory — `test/desktop-resource-assets.test.ts`
+guards that. It does not change Profile composition,
 module resolution, bootstrap ordering, API routing, or the normal/Safe Mode backend anchors.
 
 A mounted sidebar releases the cover only when no startup failure is pending.

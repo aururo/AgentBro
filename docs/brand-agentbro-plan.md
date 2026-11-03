@@ -325,6 +325,8 @@ export const BRAND_VERSION_NOTE_ZH = 'Harness 随 AgentBro 更新。'
 - 补 `@media (prefers-color-scheme: dark)`：深色主题下背景 `#141416` 并切到深色版 GIF，消除此前"深色主题先闪一帧白底"。`showSplash()` 传的 `?theme=` 查询参数本来就没人读，`prefers-color-scheme` 与 `nativeTheme.shouldUseDarkColors` 同源，用媒体查询即可，不需要内联脚本（免 CSP 问题）。
 - `startup-whale.gif` 从 `extraResources` 移除，文件本体仍在 `build/` 下逐字节保留，只是不再打进安装包。
 
+> **补记**：上游在基线之后（`901e93d V0.13.1`）把 `boot-cover` 从机器人改回了鲸鱼，让 splash 与 boot cover 全程同款。三方合并按"上游动过则取上游实现"的规则取回了鲸鱼版 boot cover，与上面三条品牌改动叠加后互相矛盾——该矛盾只在打包版暴露，修复见 §5.9。
+
 
 ## 6. 测试影响
 
@@ -489,3 +491,47 @@ Electron 二进制内，不在本仓库。本机是 Windows，没有 macOS 环�
 | 1 | 老用户安装目录迁移 | 如需老装升级后直接落到 `...\Programs\AgentBro`，要在 NSIS 侧加一段路径迁移，而不是依赖 electron-builder 的兜底追加 |
 | 2 | macOS 首个 AgentBro 版本 | 建议在 release notes 里提示 macOS 用户手工重装一次，避开 bundle 改名与自动更新的交互 |
 | 3 | 非用户可见的旧名 | AI 提示词、代码注释、`package.json` description、README / docs 与第三方声明按本次口径保持原样，需要时可另开一批 |
+
+## 5.9 启动遮罩裂图修复（打包版）
+
+### 现象与根因
+
+打包版启动时，盖在主窗口上的启动遮罩（boot cover）显示为裂图，而不是机器人动画。
+
+boot cover 的图片走自定义协议 `dsh-desktop://desktop/<name>`，打包后由
+`desktopResourcePath()` 解析到 `process.resourcesPath/<name>`。P4 决策把
+`startup-whale.gif` 移出了 `extraResources`，而三方合并按"上游动过则取上游实现"
+取回的 `boot-cover.ts` 仍在请求它，于是协议返回 404，`<img>` 变成裂图。
+
+| 版本 | splash.html | boot-cover.ts | extraResources |
+| --- | --- | --- | --- |
+| 基线 `24aad02` | 鲸鱼 | 机器人（双图 / 深浅色 / 196px） | 鲸鱼 + loader×2 |
+| `upstream/main` | 鲸鱼 | 鲸鱼（单图 / 280px / 固定浅底） | 鲸鱼 + loader×2 |
+| 改版项目 | 机器人 | 机器人（基线原样） | loader×2 |
+| 本 fork（修复前） | 机器人 | 鲸鱼（取上游） | loader×2 ❌ |
+
+开发模式不会暴露：此时 `desktopResourcePath()` 解析到 `build/<name>`，而
+`build/startup-whale.gif` 的文件本体仍留在仓库里。
+
+### 修复
+
+`src/preload/boot-cover.ts` 恢复到基线（也是改版项目）那一版，只叠加品牌文案：
+
+- 资产换成 `dsh-loader.gif` / `dsh-loader-dark.gif`，尺寸 196px、比例 640 / 360
+- 双图 + `matchMedia('(prefers-color-scheme: dark)')` 切换 `data-theme`，浅色底 `#f8f8f6`、深色底 `#141416`
+- 恢复 DOM 文字（"正在启动 AgentBro" / "Starting AgentBro"）——上游把文字藏进 `.startupCopy` 是因为鲸鱼 GIF 内嵌了字幕，机器人没有字幕
+- 恢复 Windows 标题栏让位（`padding-top:70px`）
+
+代价：与 `upstream/main` 的 `boot-cover.ts` 产生结构性分歧，以后同步上游要留意——这是品牌分叉的既定取舍，不是待办。
+
+### 为什么没被测出来
+
+`test/boot-cover.test.ts` 断言的是 `BOOT_COVER_MARK_URL` 常量与硬编码字符串相等，
+常量一改断言跟着改，验证的是"字符串等于自己"，不是"包里有这个文件"。新增
+`test/desktop-resource-assets.test.ts` 补上这道护栏：
+
+1. 扫 `src/` 里所有 `dsh-desktop://desktop/<name>` 与 `desktopResourceUrl(...)`，
+   断言每个名字都在 `build.extraResources` 里
+2. 断言 boot cover 用的 GIF 在 `build/splash.html` 里也出现，保证两屏同一批资产
+
+反向验证：把 URL 改回 `startup-whale.gif` 后两条断言同时变红。
