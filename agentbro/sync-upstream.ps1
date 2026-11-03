@@ -3,8 +3,10 @@
     把上游 dataelement/dsh-desktop 的新增提交合入当前分支。
 
 .DESCRIPTION
-    AgentBro 采用独立仓库方案，不是 GitHub platform-level fork，因此没有 Sync fork 按钮，
-    接收上游新功能必须显式走 upstream remote。
+    把上游 dataelement/dsh-desktop 的新增提交合入当前分支。
+
+    AgentBro 是上游的 GitHub fork，网页端也有 Sync fork 按钮；
+    本脚本走本地 upstream remote，便于先看清领先/落后再决定合并策略。
 
     分支模型：
       main        —— 产品主线，跟随 origin/main
