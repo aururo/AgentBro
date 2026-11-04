@@ -60,6 +60,7 @@ window.__ModuleLoader__.load({
       '这个工作台暂时还没有填写介绍。': 'This workbench has no description yet.', '安装': 'Install', '正在安装…': 'Installing…', '查看安装说明': 'View installation instructions', '已安装': 'Installed', '运行中': 'Running', '已关闭': 'Off', '原生插件状态暂不可用': 'Plugin status unavailable', '更新': 'Update', '更新中…': 'Updating…', '重启后生效': 'Restart to apply', '刷新后生效': 'Reload to apply', '更新失败': 'Update failed', '安装失败': 'Installation failed', '加载失败': 'Loading failed', '清除失败提示': 'Dismiss error',
       '重试安装': 'Retry installation', '取消收藏': 'Remove favorite', '收藏工作台': 'Favorite workbench', '移除失联记录': 'Remove orphaned record', '移除残留记录': 'Remove stale record', '原生插件状态未知或不可卸载': 'Plugin status unknown or cannot be uninstalled',
       '还没有收藏工作台': 'No favorites yet', '还没有安装工作台': 'No installed workbenches yet', '没有找到匹配的工作台': 'No matching workbenches', '把鼠标移到市场卡片上，点击书签即可收藏。': 'Hover over a market card and select the bookmark to add a favorite.', '到工作台市场选择一个工作台开始。': 'Choose a workbench in the market to get started.', '试试其他关键词或分类。': 'Try another keyword or category.',
+      '导入工作台': 'Import workbench', '选择一个本机 .tgz 工作台安装包导入。安装影响当前 Profile 的全部会话；需要重启 Harness 时会在此提示。': 'Pick a local .tgz workbench archive to import. Installation affects every session in this profile; a restart is prompted here when required.', '导入中…': 'Importing…', '导入失败': 'Import failed', '已导入，重启后生效': 'Imported · restart to apply', '导入完成': 'Import complete', '「%s」已导入。需要重启 Harness 后才会出现在左侧工作台列表。': '“%s” was imported. Restart Harness to see it in the workbench switcher.', '「%s」已导入并生效，可从左侧工作台切换列表打开。': '“%s” was imported and applied. Open it from the workbench switcher.', '此安装包与已安装的同名工作台一致，未做更改。': 'This archive matches the installed workbench; nothing was changed.', '未选择文件。': 'No file was selected.', '当前版本不支持从本机导入工作台。': 'This version does not support importing workbenches from this device.', '安装包无效：%s': 'Invalid archive: %s',
       '已复制': 'Copied', '复制失败，请展开指令手动复制。': 'Copy failed. Open the instructions and copy them manually.',
       '把开发指令发给你的 AI 助手': 'Send the development instructions to your AI assistant', '工作台开发规范': 'workbench development guide', '复制开发指令': 'Copy development instructions', '收起指令': 'Hide instructions', '查看指令': 'View instructions',
       '重启 Harness，试试你的工作台': 'Restart Harness and try your workbench', '想上架？把提交指令发给 AI 助手': 'Want to share it? Send the submission instructions to your AI assistant', '工作台市场验收规范': 'market acceptance guide', '工作台市场仓库': 'market repository', '上架分类': 'Market category', '让 AI 助手帮我选': 'Let my AI assistant choose', '想要的新分类（可选）': 'Suggested new category (optional)', '例如：法务合规': 'For example: Legal compliance', '想要的新分类': 'Suggested new category', '复制提交指令': 'Copy submission instructions', '发给 AI 助手的开发指令': 'Development instructions for your AI assistant', '发给 AI 助手的提交指令': 'Submission instructions for your AI assistant', '工作台制作步骤': 'Workbench creation steps',
@@ -751,6 +752,39 @@ window.__ModuleLoader__.load({
           const name = data.install?.pluginName || this.installs[catalogId]?.pluginName || this.pluginFor(this.remoteCatalog.find(entry => entry.id === catalogId) || { id: catalogId }) || catalogId
           this.recordApplication(name, { ...outcome, application }, catalogId, path.endsWith('market-uninstall') ? 'remove' : path.endsWith('market-enabled') ? 'enable' : 'install')
           return data
+        } finally {
+          this.installing = null
+          this.publish()
+        }
+      }
+      // Manual import from the Installed tab. The archive path always comes
+      // from the host's own file picker; the server re-validates the archive
+      // through prepareLocalInstall, so this method only carries the outcome.
+      async installLocalArchive(path, { replace = false } = {}) {
+        if (this.installing) throw new Error('另一个工作台正在安装，请稍候。')
+        this.installing = `local:${path}`
+        this.error = ''
+        this.publish()
+        try {
+          const response = await this.request('/api/desktop-workbenches/local-install', {
+            method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path, replace: replace === true })
+          })
+          const data = await response.json().catch(() => { throw new Error(tr('安装包无效：%s')) })
+          if (!response.ok) throw new Error(installErrorMessage(this.ctx, data, response.status))
+          const outcome = data.result || data
+          if (outcome.application && !['applied', 'restart-required', 'overridden'].includes(outcome.application)) {
+            const error = new Error(outcome.error?.diagnostic || data.error || '工作台插件当前不可用。')
+            error.result = outcome
+            error.application = outcome.application
+            throw error
+          }
+          const name = data.packageName || outcome.target
+          if (name) this.recordApplication(name, { ...outcome, application: outcome.application }, undefined, 'install')
+          await this.refreshNative()
+          this.publish()
+          if (outcome.application === 'applied' && !this.disposed) this.showSwitcherHint()
+          return { ...outcome, packageName: name, version: data.version }
         } finally {
           this.installing = null
           this.publish()
@@ -1461,7 +1495,7 @@ window.__ModuleLoader__.load({
       html[data-platform=darwin] [data-sidebar-collapsed] .dshWbMarketHeader::before{content:'';position:absolute;top:0;left:0;width:var(--dsh-frame-leading-clearance,160px);height:var(--dsh-frame-top-clearance,48px);-webkit-app-region:no-drag}
       html[data-platform=darwin] .dshWbMarketModalOpen .dshWbMarketHeader{-webkit-app-region:no-drag}
       .dshWbMarketHeader :is(button,a,input,select,textarea){-webkit-app-region:no-drag}
-      .dshWbMarket .dshWbRefresh{display:grid;place-items:center;width:30px;height:30px;min-width:30px;min-height:30px;max-width:30px;max-height:30px;padding:0;flex:none;border-radius:50%;corner-shape:round}.dshWbRefresh::before,.dshWbRefresh::after{corner-shape:round}.dshWbRefreshHint,.dshWbControlHint{position:relative;display:inline-flex;flex:none}.dshWbControlTooltip{display:none;position:absolute;top:calc(100% + 8px);left:50%;transform:translateX(-50%);z-index:5;padding:5px 8px;border-radius:5px;background:var(--dsw-alias-label-primary);color:var(--dsw-alias-label-primary-foreground);font-size:12px;line-height:18px;white-space:nowrap;pointer-events:none;box-shadow:0 4px 12px rgba(0,0,0,.12)}.dshWbRefreshHint:hover .dshWbControlTooltip,.dshWbRefreshHint:focus-within .dshWbControlTooltip,.dshWbControlHint:hover .dshWbControlTooltip,.dshWbControlHint:focus-within .dshWbControlTooltip,.dshWbMediaOpen:hover~.dshWbControlTooltip,.dshWbMediaOpen:focus-visible~.dshWbControlTooltip{display:block}.dshWbControlTooltip::after{content:"";position:absolute;left:50%;top:-4px;width:8px;height:8px;transform:translateX(-50%) rotate(45deg);background:inherit;border-radius:0}.dshWbCardControls .dshWbControlTooltip,.dshWbSwitchHint .dshWbControlTooltip{top:auto;bottom:calc(100% + 8px)}.dshWbCardControls .dshWbControlTooltip::after,.dshWbSwitchHint .dshWbControlTooltip::after,.dshWbMedia>.dshWbControlTooltip::after{top:auto;bottom:-4px}.dshWbMedia>.dshWbControlTooltip{top:auto;bottom:44px;left:auto;right:0;transform:none}.dshWbMedia>.dshWbControlTooltip::after{left:auto;right:20px;transform:rotate(45deg)}.dshWbCard:has(.dshWbControlHint:hover),.dshWbCard:has(.dshWbControlHint:focus-within),.dshWbCard:has(.dshWbMediaOpen:hover),.dshWbCard:has(.dshWbMediaOpen:focus-visible){z-index:4}.dshWbRefresh[aria-busy=true] svg{animation:dshWbSpin .8s linear infinite}.dshWbRetry[aria-busy=true] svg,.dshWbUpdate[aria-busy=true] svg{animation:dshWbSpin .8s linear infinite}@keyframes dshWbSpin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.dshWbRefresh[aria-busy=true] svg,.dshWbRetry[aria-busy=true] svg,.dshWbUpdate[aria-busy=true] svg{animation:none}}
+      .dshWbMarket .dshWbRefresh{display:grid;place-items:center;width:30px;height:30px;min-width:30px;min-height:30px;max-width:30px;max-height:30px;padding:0;flex:none;border-radius:50%;corner-shape:round}.dshWbRefresh::before,.dshWbRefresh::after{corner-shape:round}.dshWbImport{display:inline-flex;align-items:center;gap:6px;flex:none;padding:0 10px;height:30px;min-height:30px}.dshWbImport[aria-busy=true] svg{animation:dshWbSpin .8s linear infinite}.dshWbRefreshHint,.dshWbControlHint{position:relative;display:inline-flex;flex:none}.dshWbControlTooltip{display:none;position:absolute;top:calc(100% + 8px);left:50%;transform:translateX(-50%);z-index:5;padding:5px 8px;border-radius:5px;background:var(--dsw-alias-label-primary);color:var(--dsw-alias-label-primary-foreground);font-size:12px;line-height:18px;white-space:nowrap;pointer-events:none;box-shadow:0 4px 12px rgba(0,0,0,.12)}.dshWbRefreshHint:hover .dshWbControlTooltip,.dshWbRefreshHint:focus-within .dshWbControlTooltip,.dshWbControlHint:hover .dshWbControlTooltip,.dshWbControlHint:focus-within .dshWbControlTooltip,.dshWbMediaOpen:hover~.dshWbControlTooltip,.dshWbMediaOpen:focus-visible~.dshWbControlTooltip{display:block}.dshWbControlTooltip::after{content:"";position:absolute;left:50%;top:-4px;width:8px;height:8px;transform:translateX(-50%) rotate(45deg);background:inherit;border-radius:0}.dshWbCardControls .dshWbControlTooltip,.dshWbSwitchHint .dshWbControlTooltip{top:auto;bottom:calc(100% + 8px)}.dshWbCardControls .dshWbControlTooltip::after,.dshWbSwitchHint .dshWbControlTooltip::after,.dshWbMedia>.dshWbControlTooltip::after{top:auto;bottom:-4px}.dshWbMedia>.dshWbControlTooltip{top:auto;bottom:44px;left:auto;right:0;transform:none}.dshWbMedia>.dshWbControlTooltip::after{left:auto;right:20px;transform:rotate(45deg)}.dshWbCard:has(.dshWbControlHint:hover),.dshWbCard:has(.dshWbControlHint:focus-within),.dshWbCard:has(.dshWbMediaOpen:hover),.dshWbCard:has(.dshWbMediaOpen:focus-visible){z-index:4}.dshWbRefresh[aria-busy=true] svg{animation:dshWbSpin .8s linear infinite}.dshWbRetry[aria-busy=true] svg,.dshWbUpdate[aria-busy=true] svg{animation:dshWbSpin .8s linear infinite}@keyframes dshWbSpin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.dshWbRefresh[aria-busy=true] svg,.dshWbImport[aria-busy=true] svg,.dshWbRetry[aria-busy=true] svg,.dshWbUpdate[aria-busy=true] svg{animation:none}}
       .dshWbCheckUpdates{display:inline-flex;align-items:center;gap:6px;width:auto;padding:5px 10px}
       .dshWbCreate{display:inline-flex;align-items:center;gap:8px;padding:8px 13px;flex:none}
       .dshWbToolbar{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:16px;margin:0 0 20px;padding-top:20px}
@@ -1675,6 +1709,7 @@ window.__ModuleLoader__.load({
       const common = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true }
       if (name === 'author') return h('svg', common, h('circle', { cx: 12, cy: 8, r: 3.5 }), h('path', { d: 'M5.5 20c.7-4 2.9-6 6.5-6s5.8 2 6.5 6' }))
       if (name === 'install') return h('svg', common, h('path', { d: 'M12 3v12m0 0 4-4m-4 4-4-4M5 20h14' }))
+      if (name === 'upload') return h('svg', common, h('path', { d: 'M12 15V3m0 0 4 4m-4-4-4 4' }), h('path', { d: 'M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4' }))
       if (name === 'bookmark') return h('svg', common, h('path', { d: 'M6.5 4.5A1.5 1.5 0 0 1 8 3h8a1.5 1.5 0 0 1 1.5 1.5V21L12 17.2 6.5 21V4.5Z' }))
       if (name === 'star') return h('svg', common, h('path', { d: 'm12 3.5 2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.3-4.1 5.9-.9L12 3.5Z' }))
       if (name === 'zoom') return h('svg', common, h('circle', { cx: 10.5, cy: 10.5, r: 6.5 }), h('path', { d: 'm16 16 4 4M7.5 10.5h6m-3-3v6' }))
@@ -2010,6 +2045,34 @@ window.__ModuleLoader__.load({
               h(Button, { className: 'dshWbBtn dshWbDanger', disabled, onClick: onConfirm }, uninstall || nativeUninstall ? tr('确认卸载') : tr('确认移除'))))),
         document.body)
     }
+    function ImportOutcomeModal({ outcome, onClose }) {
+      const dialogRef = React.useRef(null)
+      const dismiss = () => onClose()
+      useDialogFocus(!!outcome, dismiss, dialogRef)
+      React.useEffect(() => {
+        if (!outcome || outcome.kind !== 'error') return undefined
+        const timer = setTimeout(dismiss, 8000)
+        return () => clearTimeout(timer)
+      }, [outcome])
+      if (!outcome) return null
+      const name = outcome.packageName || ''
+      const applied = outcome.kind === 'applied'
+      const restart = outcome.kind === 'restart-required'
+      return require('react-dom').createPortal(
+        h('div', { className: 'dshWbModalBackdrop', onClick: dismiss },
+          h('div', { ref: dialogRef, className: 'dshWbModal dshWbConfirm', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'dsh-workbench-import-title', 'aria-describedby': 'dsh-workbench-import-description', tabIndex: -1, onClick: (event) => event.stopPropagation() },
+            h('div', { className: 'dshWbConfirmIcon', 'aria-hidden': true }, h(MarketIcon, { name: outcome.kind === 'error' ? 'failure' : 'install', size: 18 })),
+            h('h2', { id: 'dsh-workbench-import-title', style: { fontSize: 18, lineHeight: '26px' } },
+              outcome.kind === 'error' ? tr('导入失败') : outcome.kind === 'overridden' ? tr('此安装包与已安装的同名工作台一致，未做更改。') : tr('导入完成')),
+            h('p', { id: 'dsh-workbench-import-description', className: 'dshWbMuted' },
+              outcome.kind === 'error' ? tr(outcome.message || '安装包无效：%s')
+                : restart ? tr('「%s」已导入。需要重启 Harness 后才会出现在左侧工作台列表。').replace('%s', name)
+                : applied ? tr('「%s」已导入并生效，可从左侧工作台切换列表打开。').replace('%s', name)
+                : tr('「%s」已导入。需要重启 Harness 后才会出现在左侧工作台列表。').replace('%s', name)),
+            h('div', { className: 'dshWbActions' },
+              h(Button, { primary: true, autoFocus: true, onClick: dismiss }, tr('关闭'))))),
+        document.body)
+    }
     function developmentWorkbenchAgentPrompt(english = isEnglish()) {
       if (english) return `I want to build and use a DSH Desktop workbench locally, without uploading or submitting it. This generic instruction does not contain business requirements; do not choose a workbench concept from it. You may use your own development process; DSH does not control that process.
 
@@ -2168,10 +2231,28 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
       const [submitCategory, setSubmitCategory] = React.useState('')
       const [categoryIdea, setCategoryIdea] = React.useState('')
       const [replacing, setReplacing] = React.useState(null)
+      const [importOutcome, setImportOutcome] = React.useState(null)
+      const [importing, setImporting] = React.useState(false)
       const PAGE_SIZE = 24
       const [visibleCount, setVisibleCount] = React.useState(PAGE_SIZE)
       if (typeof React.useEffect === 'function') {
         React.useEffect(() => { setVisibleCount(PAGE_SIZE) }, [tab, search, category, sortBy])
+      }
+      // Manual .tgz import: the host file picker supplies the absolute path;
+      // the server re-validates the archive before Plugin Manager installs it.
+      const importArchive = async () => {
+        const picker = globalThis.__DSH_WORKBENCH_ARCHIVE_PICKER__
+        if (!picker || typeof picker.pick !== 'function') { setImportOutcome({ kind: 'error', message: tr('当前版本不支持从本机导入工作台。') }); return }
+        let path = null
+        try { path = await picker.pick() } catch { path = null }
+        if (!path) return
+        setImporting(true)
+        try {
+          const result = await service.installLocalArchive(path)
+          setImportOutcome({ kind: result.application || 'applied', packageName: result.packageName, version: result.version })
+        } catch (error) {
+          setImportOutcome({ kind: 'error', message: error instanceof Error ? error.message : String(error) })
+        } finally { setImporting(false) }
       }
       const installMarket = (entry) => {
         const bundle = service.native.bundles[service.pluginFor(entry)]
@@ -2252,6 +2333,7 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
             h(Button, { id: 'dsh-workbench-mine-tab', role: 'tab', tabIndex: tab === 'mine' ? 0 : -1, 'aria-selected': tab === 'mine', 'aria-controls': 'dsh-workbench-mine-panel', onKeyDown: navigateCollections, onClick: () => selectCollection('mine') }, `${tr('已安装')} (${installedEntries.length})`))),
           h('div', { className: 'dshWbBrowseTools' },
             h('span', { className: 'dshWbRefreshHint' }, h(Button, { className: 'dshWbBtn dshWbRefresh', 'aria-describedby': 'dsh-workbench-refresh-tooltip', 'aria-label': checkingUpdates ? tr('正在检查更新') : tab === 'mine' ? tr('检查更新') : tr('刷新目录'), 'aria-busy': catalogRefreshing || checkingUpdates, disabled: catalogRefreshing || checkingUpdates, onClick: () => service.run(tab === 'mine' ? service.checkUpdates() : service.refreshCatalog()) }, h(MarketIcon, { name: 'refresh', size: 17 })), h('span', { id: 'dsh-workbench-refresh-tooltip', className: 'dshWbControlTooltip', role: 'tooltip' }, checkingUpdates ? tr('正在检查更新') : tab === 'mine' ? tr('检查更新') : tr('刷新目录'))),
+            tab === 'mine' && h('span', { className: 'dshWbRefreshHint' }, h(Button, { id: 'dsh-workbench-import-button', className: 'dshWbBtn dshWbImport', 'aria-describedby': 'dsh-workbench-import-tooltip', 'aria-label': importing ? tr('导入中…') : tr('导入工作台'), 'aria-busy': importing, disabled: importing || pending > 0, onClick: () => void importArchive() }, h(MarketIcon, { name: 'upload', size: 17 }), importing ? tr('导入中…') : tr('导入工作台')), h('span', { id: 'dsh-workbench-import-tooltip', className: 'dshWbControlTooltip', role: 'tooltip' }, tr('选择一个本机 .tgz 工作台安装包导入。安装影响当前 Profile 的全部会话；需要重启 Harness 时会在此提示。'))),
             h('label', { className: 'dshWbSort' }, h('select', { 'aria-label': tr('按分类筛选'), value: category, onChange: (event) => { setCategory(event.target.value); setVisibleCount(PAGE_SIZE) } }, categories.map((value) => h('option', { key: value.id, value: value.id }, value.id === 'all' ? tr('全部类型') : value.name)))),
             h('label', { className: 'dshWbSort' }, h('select', { 'aria-label': tr('工作台排序方式'), value: sortBy, onChange: (event) => { setSortBy(event.target.value); setVisibleCount(PAGE_SIZE) } },
               h('option', { value: 'stars' }, tr('Star 数量')),
@@ -2364,6 +2446,7 @@ ${ACCEPTANCE_READING}先确认要公开的仓库和内容，不得公开密钥�
             h('p', { className: 'dshWbMoreCount' }, isEnglish() ? `Showing ${displayedEntries.length} of ${entries.length}` : `已显示 ${displayedEntries.length} / 共 ${entries.length} 个工作台`))),
         replacing && h(ConfirmMarketUpdate, { entry: replacing.entry, risk: replacing.risk, disabled: !!installing, onCancel: () => setReplacing(null), onConfirm: () => { service.run(service.installFromMarket(replacing.entry.catalogId || replacing.entry.id, { confirmedReplacement: true })); setReplacing(null) } }),
         detail != null && h(DetailModal, { entry: selected, onClose: () => setDetail(null) }),
+        importOutcome && h(ImportOutcomeModal, { outcome: importOutcome, onClose: () => setImportOutcome(null) }),
         removing != null && h(ConfirmRemoveModal, { entry: removingEntry, disabled: disabled || !!installing || !!removingPlugin, onCancel: () => setRemoving(null), uninstall: !removingStale && !removingEntry?.unavailable && !!service.marketInstallFor(removing), nativeUninstall: !removingStale && !removingEntry?.unavailable && !service.marketInstallFor(removing), recordOnly: !!removingStale || !!removingEntry?.unavailable, onConfirm: () => service.run((removingEntry?.unavailable ? service.clearUnavailableRecord(removing) : removingStale ? service.removeStaleWorkbenchRecord(removing) : service.removeWorkbench(removing)).then(() => setRemoving(null))) }))
     }
     function Notebook({ service, entry }) {

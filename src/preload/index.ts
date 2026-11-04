@@ -187,6 +187,10 @@ contextBridge.exposeInMainWorld('__DSH_DIRECTORY_PICKER__', {
   pick: (): Promise<string | null> => ipcRenderer.invoke('directory-picker:open')
 })
 
+contextBridge.exposeInMainWorld('__DSH_WORKBENCH_ARCHIVE_PICKER__', {
+  pick: (): Promise<string | null> => ipcRenderer.invoke('workbench-archive-picker:open')
+})
+
 contextBridge.exposeInMainWorld(
   HOST_PATHS_BRIDGE,
   createHostPathsBridge(file => webUtils.getPathForFile(file))

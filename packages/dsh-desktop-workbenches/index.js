@@ -1,4 +1,5 @@
 import { localWorkbenchInstallTool } from './local-install-tool.mjs'
+import { prepareLocalInstall } from './local-install.mjs'
 import { createRestartStatus, readLocalWorkbenchSnapshot } from './restart-status.mjs'
 import { readInstallEvidence } from './install-evidence.mjs'
 import { randomUUID } from 'node:crypto'
@@ -264,6 +265,38 @@ export function apply(ctx, config) {
         ...(failed ? { error: result.error?.message || result.error?.code || 'Plugin operation did not complete.', code: result.error?.code || result.application } : {})
       }, { status: failed ? 409 : 200, headers: { 'cache-control': 'no-store' } })
     }
+    // Manual import from the Installed tab: same prepareLocalInstall validation
+    // and staging the agent tool uses, so a browser-initiated install cannot
+    // bypass any package check. The absolute path still comes from the host's
+    // own file picker, never from browser-supplied text.
+    ctx.connection.fetch.register({
+      path: '/api/desktop-workbenches/local-install',
+      methods: ['POST'],
+      requestBody: 'buffered',
+      async fetch(request) {
+        try {
+          const payload = await readPayload(request, 4096, 'Request is too large.')
+          if (typeof payload?.path !== 'string' || !payload.path) throw new MarketInstallError('A local workbench archive path is required.')
+          if (payload.replace !== undefined && payload.replace !== true && payload.replace !== false) throw new MarketInstallError('A boolean replace flag is required.')
+          const target = await prepareLocalInstall(payload.path)
+          try {
+            const result = await manager.installBundle(target.spec, {
+              expectedName: target.name, expectedVersion: target.version, replace: payload.replace === true,
+              requestId: `local-${randomUUID()}`
+            })
+            if (result?.application === 'applied') {
+              try { await restartStatus.acknowledge(target.name) }
+              catch (error) { ctx.logger?.warn?.('Local installation applied, but restart status reconciliation failed: %s', error.message) }
+            }
+            return lifecycleResponse(result, { packageName: target.name, version: target.version })
+          } finally {
+            // A cleanup error must not hide an already completed manager operation.
+            try { await target.cleanup() }
+            catch (error) { ctx.logger?.warn?.('Could not remove local install staging: %s', error.message) }
+          }
+        } catch (error) { return installFailure(error, 'Could not import the local workbench archive.') }
+      }
+    })
     ctx.connection.fetch.register({
       path: '/api/desktop-workbenches/market-install',
       methods: ['POST'],

@@ -3696,6 +3696,24 @@ async function bootstrap(): Promise<void> {
     })
     return result.canceled ? null : result.filePaths[0] ?? null
   })
+  // Manual workbench-archive import: the same main-window boundary as the
+  // directory picker, but selects one .tgz file for the Installed tab's import
+  // action. Only the picked absolute path crosses the bridge.
+  ipcMain.handle('workbench-archive-picker:open', async (event) => {
+    assertTrustedMainWindowEvent(event)
+    // The assertion above rejects when the window is missing; narrow for the dialog call.
+    const window = mainWindow
+    if (!window) throw new Error('The main window is not available.')
+
+    const result = await dialog.showOpenDialog(window, {
+      title: harnessLocale() === 'zh' ? '选择工作台安装包' : 'Select Workbench Archive',
+      properties: ['openFile'],
+      filters: [harnessLocale() === 'zh'
+        ? { name: '工作台安装包 (.tgz)', extensions: ['tgz'] }
+        : { name: 'Workbench archive (.tgz)', extensions: ['tgz'] }]
+    })
+    return result.canceled ? null : result.filePaths[0] ?? null
+  })
   ipcMain.handle('mobile:open-pairing', () => showMobilePairing())
   ipcMain.handle('mobile:status', () => ({ connected: mobileBridge.snapshot().connected }))
   ipcMain.handle('harness:show-log', () => {
