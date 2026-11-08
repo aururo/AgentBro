@@ -109,6 +109,7 @@ C10.7 定义了混合场景怎么**跑**，但没定义它怎么**产出脚本**
 | F-14 | R5 的修复依赖「每事务一个 Trend」，而 groups 来自分段标注；但标注 API 与「标注→`perf-spec.groups`」的回写规则都不存在，链条断开 | 新增 C10.4 + `POST /perf/record/label`；明确幂等回写与未标注退化 | C10.4、C10 |
 | F-15 | **录制用哪个浏览器没定义**：只写「Chrome/Edge + 独立 profile」。四件事悬空：两者都在时用谁、能否接管用户已开的浏览器、浏览器调试端口怎么取、profile 何时删（原文只在失败回滚里说"删"）。本机 Chrome 默认路径不存在、只有 Edge，这条不定就会导致"开发机能录、用户机器不能录" | 新增 C10.5：选择顺序 + 禁止 attach + 端口规则 + profile 生命周期；`meta.json` 增 `browser.product`/`profileKept` | C10.5、C4.1 |
 | F-16 | **采集范围没有契约**：只有 `captureBodies` 一个布尔，没说 Document / 静态资源 / WebSocket 收不收。直接决定"混合页面"能不能成立——页面导航若不被采集，脚本里就无法回放"打开页面"这一步 | 新增 C10.6：resourceType 默认表、排除规则、Document 的转换差异、第三方主机过滤与计数 | C10.6、C10 |
+| F-20 | **实现 P0 时发现规范漏了一条外部事实**：`--new-machine-readable-summary` 的输出**不含 thresholds**，键名也从 `p(95)` 变成 `p95`。C7 原文只写了"顶层不同"，没说这两点，报告会显示"0 项被突破" | C7 补两条实测差异 + 第 3 章的降级文案；归一化层做键名改写与 `checks` 合成 | C7、§6.1 |
 | F-19 | **多场景怎么录没有链路**：C10.7 只定义怎么跑。在 mix 页点录制会被真去开浏览器（没有"禁止录制"的前置检查）；`POST /perf/script` 强制要 `recId`，而 mix 页没有；多份子脚本各带 `setup()`，k6 只允许一个，合并规则缺失 | 新增 C10.8（5 步工作流 + 7 条合并规则 + 当前脚本指针）+ C10.3 加禁止项 + 路由 `recId` 可选 + C10.4/C16 同步；加 T13/A15 | C10.8、C10.3、C10、C16 |
 | F-18 | **需求变更**：产品要求支持 mixed scenario（v1.4 曾列为不做） | 纳入范围并补 C10.7：速率语义、脚本形状、指标命名、VU 推导、达成率检测、`INVALID` 状态；真机验证 3 个假设（附录 B） | C10.7、C1、§6.1、§10 T12、A14 |
 | F-17 | 「是否支持混合场景」无答案：§1 非目标没列 mixed scenario，实现凭空决定 | §1 显式列为不做，并写清将来形状（`mix[]` + 多 exec + 每场景 Trend）；同时禁止用多进程并行冒充混合 | §1、C10.1 |
@@ -155,7 +156,8 @@ C10.7 定义了混合场景怎么**跑**，但没定义它怎么**产出脚本**
 
 | 文件 | 职责 | 纯函数 | 行数上限 |
 |---|---|---|---|
-| `spec.js` | `perf-spec` fence 解析 + 校验（照 `lib/testSpec.js` 的风格，无 YAML 依赖） | ✅ | 180 |
+| `yaml.js` | 受限 YAML 子集解析（嵌套映射 / 块序列 / 内联 `[a,b]` `{k:v}` / 注释），**不引解析依赖** | ✅ | 180 |
+| `spec.js` | `perf-spec` fence 抽取 + 校验（照 `lib/testSpec.js` 的风格） | ✅ | 200 |
 | `env.js` | k6 / 浏览器探测、版本解析、路径校验（C5.0） | ❌（跑 `k6 version`） | 160 |
 | `paths.js` | 产物目录解析与越界校验（复用 `contract.js` 的 `isWithin`） | ✅ | 90 |
 | `recorder.js` | 起浏览器 + CDP 抓包 → HAR（移植 xgents `har-capture.ts`） | ❌（有进程） | 480 |
@@ -451,6 +453,8 @@ C3 的目录里引用了这个文件，但此前只有名字没有形状。契�
 | `results.metrics[].name` | 指标名 |
 | `results.metrics[].type` | 类型 |
 | `results.metrics[].values` | 统计值；`http_req_failed.values = {matches, rate, total}`，失败率取 **`rate`**；trend 的 `values` 直接用；counter 取 `count`/`rate` |
+
+**形状 C 的两个实测差异**（v1.6 补）：① 统计键是 `p90`/`p95`（无括号），归一化时改写为 `p(90)`/`p(95)`；② **不含任何 threshold 结果**——`breached` 为空，报告第 3 章必须显示「阈值明细不可用（以 exit code 判定）」，而不是"0 项被突破"。counter 在该形状里也只有 `count`、没有 `rate`。
 
 **失败降级**：识别不出形状时，`shape='unknown'`，`notes` 追加 `指标源格式不可识别（k6 <version>）`；报告对应章节渲染该说明，**不得输出 0**。
 
