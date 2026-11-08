@@ -241,3 +241,25 @@ export function stat(summary, metric, key) {
 export function breachedThresholds(summary) {
   return (summary.thresholds ?? []).filter((row) => row.breached === true)
 }
+
+/**
+ * The run verdict (spec §6.1). Three values, not two:
+ *
+ *  INVALID — the numbers cannot be trusted (summary unreadable, or the mix did not
+ *            deliver its target rates). Reporting PASS/FAIL here would be a lie.
+ *  FAIL    — a threshold was breached, or k6 exited 99.
+ *  PASS    — everything else.
+ *
+ * `exitCode` is authoritative for 99 because the new machine-readable summary
+ * carries no threshold results at all (measured).
+ *
+ * @param {{ summary: ReturnType<typeof normalizeSummary>, exitCode: number|null, underDelivered?: boolean }} input
+ * @returns {'PASS'|'FAIL'|'INVALID'}
+ */
+export function evaluateVerdict({ summary, exitCode, underDelivered = false }) {
+  if (summary === null || summary === undefined || summary.shape === 'unknown') return 'INVALID'
+  if (underDelivered === true) return 'INVALID'
+  if (exitCode === 99) return 'FAIL'
+  const breached = (summary.thresholds ?? []).some((row) => row.breached === true)
+  return breached ? 'FAIL' : 'PASS'
+}

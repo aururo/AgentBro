@@ -13,6 +13,9 @@ import { createPerfStore } from './store.js'
 import { convertHar } from './harToScript.js'
 import { createHash } from 'node:crypto'
 import { inspectScript } from './env.js'
+import { createRunner } from './runner.js'
+import { evaluateVerdict, normalizeSummary } from './summary.js'
+import { newRunId } from './paths.js'
 import { newRecordId } from './paths.js'
 
 /** Spec C3: recordings and runs older than this are swept lazily. */
@@ -29,9 +32,10 @@ export const SCENE_PREFIX = 'perf/'
  * @param {ReturnType<typeof createPerfStore>} [deps.artifacts] test seam for the artifact store
  * @param {ReturnType<typeof createRecorder>} [deps.recorder] test seam for the recorder
  */
-export function createPerf({ root, store, probe = {}, artifacts: artifactsDep, recorder: recorderDep }) {
+export function createPerf({ root, store, probe = {}, artifacts: artifactsDep, recorder: recorderDep, runner: runnerDep }) {
   const artifacts = artifactsDep ?? createPerfStore({ root })
   const recorder = recorderDep ?? createRecorder({ store: artifacts })
+  const runner = runnerDep ?? createRunner({ store: artifacts })
 
   /** @type {{ recId: string, siteId: string, sceneId: string } | null} */
   let recording = null
@@ -98,6 +102,16 @@ export function createPerf({ root, store, probe = {}, artifacts: artifactsDep, r
         title: row.doc.title,
         mode: typeof spec?.loadModel?.mode === 'string' ? spec.loadModel.mode : null,
         target: typeof spec?.target === 'string' ? spec.target : null,
+        load:
+          spec?.loadModel === null || spec?.loadModel === undefined
+            ? null
+            : {
+                mode: String(spec.loadModel.mode ?? 'stages'),
+                stages: Array.isArray(spec.loadModel.stages) ? spec.loadModel.stages : null,
+                vus: Number.isFinite(Number(spec.loadModel.vus)) ? Number(spec.loadModel.vus) : null,
+                duration: typeof spec.loadModel.duration === 'string' ? spec.loadModel.duration : null,
+                iterationsPerSec: Number.isFinite(Number(spec.loadModel.iterationsPerSec)) ? Number(spec.loadModel.iterationsPerSec) : null,
+              },
         mix:
           Array.isArray(spec?.loadModel?.mix) && spec.loadModel.mix.length > 0
             ? spec.loadModel.mix.map((item) => ({ sceneRef: String(item?.sceneRef ?? ''), weight: Number(item?.weight) || 0 }))
@@ -335,6 +349,146 @@ export function createPerf({ root, store, probe = {}, artifacts: artifactsDep, r
     }
   }
 
+  // --- execution (spec C10.1 single-flight, C10.2 smoke gate) ----------------
+
+  /**
+   * Latest smoke verdict for this exact script (spec C10.2).
+   *
+   * Keyed on `scriptId`: a regenerated script has different content, so an old
+   * smoke must not unlock a load run.
+   * @param {string} siteId @param {string} sceneId @param {string} scriptId
+   */
+  async function latestSmokeVerdict(siteId, sceneId, scriptId) {
+    const rows = await artifacts.listRuns(siteId)
+    for (const row of rows) {
+      const state = row.state
+      if (state === null || state === undefined) continue
+      if (state.mode !== 'smoke' || state.sceneId !== sceneId || state.scriptId !== scriptId) continue
+      if (state.status === 'failed' || state.status === 'interrupted' || state.status === 'queued') return { found: true, verdict: 'INVALID', runId: row.runId }
+      if (state.status !== 'finished') continue
+      const raw = await artifacts.readSummary(siteId, row.runId)
+      const verdict = evaluateVerdict({ summary: normalizeSummary(raw), exitCode: typeof state.exitCode === 'number' ? state.exitCode : null })
+      return { found: true, verdict, runId: row.runId }
+    }
+    return { found: false, verdict: null, runId: null }
+  }
+
+  /**
+   * Start a run. Every refusal here is something the user can act on; none of
+   * them is a "try again and hope".
+   *
+   * @param {{ siteId: string, sceneId: string, mode?: 'smoke'|'load', overrides?: any, startedBy?: string }} input
+   */
+  async function startRun({ siteId, sceneId, mode = 'smoke', overrides = {}, startedBy = 'panel' }) {
+    if (runner.isRunning()) {
+      throw new WikiError(CODE.PERF_BUSY, 'a run is already in progress', { current: runner.status()?.runId })
+    }
+    const scene = await requireRecordableScene(siteId, sceneId)
+    const script = await getScript({ siteId, sceneId })
+    if (script.scriptId === null) throw new WikiError(CODE.PERF_SCRIPT_INVALID, 'generate a script before running')
+
+    const blocking = (script.meta?.todos ?? []).filter((todo) => todo.severity === 'block')
+    if (blocking.length > 0) {
+      throw new WikiError(CODE.PERF_SCRIPT_INVALID, `${blocking.length} blocking TODO(s) remain — resolve them in the script stage`, {
+        blocking: blocking.map((todo) => ({ key: todo.key, message: todo.message })),
+      })
+    }
+
+    const k6 = await probeK6({ k6Path: (await readConfig(root))?.perf?.k6Path, ...probe })
+    if (k6.found !== true || typeof k6.path !== 'string') throw new WikiError(CODE.PERF_NO_K6, 'k6 is required to run a load test')
+
+    const target = String(scene.spec?.target ?? 'test')
+    if (target === 'prod' && overrides.allowProduction !== true) {
+      throw new WikiError(CODE.PERF_PROD_BLOCKED, 'this scene targets production; confirm explicitly before running')
+    }
+
+    if (mode === 'load') {
+      const smoke = await latestSmokeVerdict(siteId, sceneId, script.scriptId)
+      if (smoke.found !== true) throw new WikiError(CODE.PERF_SMOKE_REQUIRED, 'run a smoke test first')
+      if (smoke.verdict !== 'PASS') {
+        throw new WikiError(CODE.PERF_SMOKE_REQUIRED, `the last smoke for this script did not pass (${smoke.verdict})`, { runId: smoke.runId })
+      }
+    }
+
+    const loadModel = scene.spec?.loadModel ?? {}
+    const load =
+      mode === 'smoke'
+        ? { vus: 1, duration: '30s' }
+        : {
+            stages: Array.isArray(overrides.stages) ? overrides.stages : loadModel.mode === 'stages' ? loadModel.stages : undefined,
+            vus: overrides.vus ?? (loadModel.mode === 'constant' ? loadModel.vus : undefined),
+            duration: overrides.duration ?? (loadModel.mode === 'constant' ? loadModel.duration : undefined),
+            iterations: overrides.iterations,
+            env: overrides.env,
+          }
+    if (mode === 'load' && load.stages === undefined && load.vus === undefined) {
+      throw new WikiError(CODE.INVALID, 'load model is missing: set stages or vus on the scene')
+    }
+
+    const runId = newRunId()
+    const started = await runner.start({
+      k6Path: k6.path,
+      siteId,
+      runId,
+      sceneId,
+      scriptId: script.scriptId,
+      scriptPath: artifacts.scriptPathOf(siteId, scriptSlugOf(sceneId), script.scriptId),
+      mode,
+      baseUrl: String(recordBaseUrl(script.meta, scene.baseUrl)),
+      load,
+    })
+    return { runId, mode, scriptId: script.scriptId, ...started, startedBy }
+  }
+
+  /** @param {{ siteId: string, runId?: string }} input */
+  async function stopRun({ siteId, runId }) {
+    const live = runner.status()
+    if (live === null) throw new WikiError(CODE.NOT_FOUND, 'no run is in progress')
+    if (typeof runId === 'string' && runId !== '' && runId !== live.runId) {
+      throw new WikiError(CODE.NOT_FOUND, `run ${runId} is not the active one`)
+    }
+    return runner.stop()
+  }
+
+  /**
+   * Live counters while running; state + verdict afterwards. Both paths return the
+   * same shape so the panel needs one renderer.
+   * @param {{ siteId: string, runId?: string }} input
+   */
+  async function runStatus({ siteId, runId }) {
+    const live = runner.status()
+    if (live !== null && (runId === undefined || runId === '' || runId === live.runId)) {
+      return { runId: live.runId, running: true, state: live.state, live: live.live, series: live.series, verdict: null, events: [] }
+    }
+    const id = typeof runId === 'string' && runId !== '' ? runId : (await artifacts.listRuns(siteId))[0]?.runId
+    if (id === undefined || id === null) throw new WikiError(CODE.NOT_FOUND, 'no runs yet')
+    const state = await artifacts.readRunState(siteId, id)
+    if (state === null) throw new WikiError(CODE.NOT_FOUND, `unknown run: ${id}`)
+    const raw = await artifacts.readSummary(siteId, id)
+    const verdict = state.status === 'finished' || state.status === 'stopped'
+      ? evaluateVerdict({ summary: normalizeSummary(raw), exitCode: typeof state.exitCode === 'number' ? state.exitCode : null })
+      : null
+    const events = (await artifacts.readRunEvents(siteId, id)).slice(-40)
+    return { runId: id, running: false, state, live: null, series: [], verdict, events }
+  }
+
+  /** Runs for the scene, newest first: the panel lists them under 运行/报告. */
+  async function listSceneRuns({ siteId, sceneId, limit = 20 }) {
+    const rows = await artifacts.listRuns(siteId)
+    return rows
+      .filter((row) => row.state?.sceneId === sceneId)
+      .slice(0, limit)
+      .map((row) => ({
+        runId: row.runId,
+        mode: row.state?.mode ?? null,
+        status: row.state?.status ?? null,
+        exitCode: row.state?.exitCode ?? null,
+        scriptId: row.state?.scriptId ?? null,
+        startedAt: row.state?.startedAt ?? null,
+        finishedAt: row.state?.finishedAt ?? null,
+      }))
+  }
+
   /** Host shutdown: never leave a browser or a half-written record behind. */
   async function dispose() {
     if (recorder.isRecording()) await recorder.abort().catch(() => {})
@@ -354,6 +508,11 @@ export function createPerf({ root, store, probe = {}, artifacts: artifactsDep, r
     getScript,
     confirmScript,
     validateCurrentScript,
+    startRun,
+    stopRun,
+    runStatus,
+    listSceneRuns,
+    latestSmokeVerdict,
   }
 }
 
@@ -365,4 +524,11 @@ export function createPerf({ root, store, probe = {}, artifacts: artifactsDep, r
 function previewOf(source) {
   const lines = String(source ?? '').split('\n')
   return lines.slice(0, 200).join('\n') + (lines.length > 200 ? '\n…' : '')
+}
+
+/** The recording's base URL beats the scene's when they disagree (the recording
+ *  is what actually ran, and its HAR paths came from it). */
+function recordBaseUrl(meta, sceneBaseUrl) {
+  const fromMeta = typeof meta?.baseUrl === 'string' ? meta.baseUrl.trim() : ''
+  return fromMeta !== '' ? fromMeta : String(sceneBaseUrl ?? '')
 }

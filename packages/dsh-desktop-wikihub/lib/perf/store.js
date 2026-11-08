@@ -5,7 +5,7 @@
 //     concatenation at a call site
 //  2. `har.json` is written through a temp file + rename, so a crash mid-write
 //     cannot leave a half-parsed HAR that P3 would happily convert
-import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { appendFile, mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 import { recordDir, runDir, safeId, scriptDir, sitePerfDir } from './paths.js'
@@ -193,6 +193,99 @@ export function createPerfStore({ root }) {
     await writeJsonAtomic(join(dir, 'current.json'), pointer)
   }
 
+  // --- runs (spec C4, C10) -------------------------------------------------
+
+  /** @param {string} siteId @param {string} runId */
+  async function ensureRun(siteId, runId) {
+    const dir = runDir(root, siteId, runId)
+    await mkdir(dir, { recursive: true })
+    return dir
+  }
+
+  /** @param {string} siteId @param {string} runId */
+  async function readRunState(siteId, runId) {
+    try {
+      return JSON.parse(await readFile(join(runDir(root, siteId, runId), 'state.json'), 'utf8'))
+    } catch {
+      return null
+    }
+  }
+
+  /** @param {string} siteId @param {string} runId @param {Record<string, unknown>} state */
+  async function writeRunState(siteId, runId, state) {
+    const dir = runDir(root, siteId, runId)
+    await mkdir(dir, { recursive: true })
+    await writeJsonAtomic(join(dir, 'state.json'), state)
+    return join(dir, 'state.json')
+  }
+
+  /**
+   * Append one event row. `seq` is assigned by the caller (single writer per run).
+   * @param {string} siteId @param {string} runId @param {Record<string, unknown>} row
+   */
+  async function appendRunEvent(siteId, runId, row) {
+    const dir = runDir(root, siteId, runId)
+    await mkdir(dir, { recursive: true })
+    await appendFile(join(dir, 'events.jsonl'), JSON.stringify(row) + '\n', 'utf8')
+  }
+
+  /** @param {string} siteId @param {string} runId */
+  async function readRunEvents(siteId, runId) {
+    try {
+      const text = await readFile(join(runDir(root, siteId, runId), 'events.jsonl'), 'utf8')
+      return text
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => {
+          try {
+            return JSON.parse(line)
+          } catch {
+            return null
+          }
+        })
+        .filter(Boolean)
+    } catch {
+      return []
+    }
+  }
+
+  /** @param {string} siteId @param {string} runId */
+  const summaryPathOf = (siteId, runId) => join(runDir(root, siteId, runId), 'summary.json')
+  /** @param {string} siteId @param {string} runId */
+  const runStatePathOf = (siteId, runId) => join(runDir(root, siteId, runId), 'state.json')
+
+  /** @param {string} siteId @param {string} runId */
+  async function readSummary(siteId, runId) {
+    try {
+      return JSON.parse(await readFile(summaryPathOf(siteId, runId), 'utf8'))
+    } catch {
+      return null
+    }
+  }
+
+  /** Runs on disk, newest first. @param {string} siteId */
+  async function listRuns(siteId) {
+    const dir = join(siteDir(siteId), 'run')
+    let names = []
+    try {
+      names = await readdir(dir)
+    } catch {
+      return []
+    }
+    const rows = []
+    for (const name of names) {
+      try {
+        safeId(name)
+      } catch {
+        continue
+      }
+      const state = await readRunState(siteId, name)
+      const info = await stat(join(dir, name)).catch(() => null)
+      rows.push({ runId: name, mtime: info?.mtimeMs ?? 0, state })
+    }
+    return rows.sort((a, b) => b.mtime - a.mtime)
+  }
+
   /** Absolute path of a record's HAR — for diagnostics only; the panel never reads bytes. */
   function harPathOf(siteId, recId) {
     return join(recordDir(root, siteId, recId), 'har.json')
@@ -216,6 +309,15 @@ export function createPerfStore({ root }) {
     sweep,
     harPathOf,
     runPathOf: (siteId, runId) => runDir(root, siteId, runId),
+    ensureRun,
+    readRunState,
+    writeRunState,
+    appendRunEvent,
+    readRunEvents,
+    summaryPathOf,
+    readSummary,
+    runStatePathOf,
+    listRuns,
   }
 }
 

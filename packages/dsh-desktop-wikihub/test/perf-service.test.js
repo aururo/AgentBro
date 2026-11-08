@@ -7,7 +7,7 @@
 // (the one that knows every scene's mode) makes the nested-mix case report valid.
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { copyFile, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
@@ -472,5 +472,168 @@ test('validation runs k6 inspect and reports blocking TODOs', async () => {
     assert.equal(inspected.some((call) => call.args[0] === 'inspect'), true)
     // `file` is the k6 executable; the script is the first argument.
     assert.equal(inspected.some((call) => String(call.args[1] ?? '').endsWith('.js')), true)
+  })
+})
+
+// --- execution policy (spec C10.1 single-flight, C10.2 smoke gate) -----------
+
+function fakeRunner({ running = false } = {}) {
+  const calls = []
+  let active = running ? { runId: 'r_live', state: { status: 'running' } } : null
+  return {
+    calls,
+    isRunning: () => active !== null,
+    status: () => active,
+    async start(input) {
+      calls.push(input)
+      active = { runId: input.runId, state: { status: 'running' } }
+      return { runId: input.runId, restPort: 1, argv: [], startedAt: 1 }
+    },
+    async stop() {
+      calls.push('stop')
+      active = null
+      return { requested: true, via: 'rest' }
+    },
+    async dispose() {},
+  }
+}
+
+/** Seed a generated script directly: these tests are about run policy, not conversion. */
+async function seedScript(root, { scriptId = 'abc1234', todos = [], baseUrl = 'https://test.example.com' } = {}) {
+  const artifacts = createPerfStore({ root })
+  await artifacts.writeScript('s', '下单主流程', scriptId, {
+    source: 'export default function () {}',
+    meta: { scriptId, recId: 'rec_seed', todos, warnings: [], options: {}, baseUrl, stats: { requests: 1, transactions: 1 } },
+  })
+  await artifacts.writeCurrentScript('s', '下单主流程', { scriptId, updatedAt: Date.now() })
+  return artifacts
+}
+
+/** Seed a finished smoke run with a summary that passes thresholds. */
+async function seedSmoke(root, { scriptId = 'abc1234', smokeScriptId = null, exitCode = 0, summary = 'summary-flat.json' } = {}) {
+  // The run references a script, so the script must exist too — otherwise the
+  // service refuses with "generate a script" before it ever reaches the gate.
+  const artifacts = await seedScript(root, { scriptId })
+  await artifacts.writeRunState('s', 'r_smoke', {
+    runId: 'r_smoke',
+    site: 's',
+    sceneId: 'perf/下单主流程',
+    scriptId: smokeScriptId ?? scriptId,
+    mode: 'smoke',
+    status: 'finished',
+    exitCode,
+    startedAt: Date.now() - 1000,
+    finishedAt: Date.now(),
+  })
+  await copyFile(new URL('./fixtures/perf/' + summary, import.meta.url), artifacts.summaryPathOf('s', 'r_smoke'))
+  return artifacts
+}
+
+test('a run without a script is refused before anything spawns', async () => {
+  await withRoot(async (root) => {
+    const runner = fakeRunner()
+    const perf = createPerf({ root, store: sceneStore(), probe: envWithBrowser, recorder: fakeRecorder(), runner })
+    await assert.rejects(() => perf.startRun({ siteId: 's', sceneId: 'perf/下单主流程' }), (error) => {
+      assert.equal(/** @type {any} */ (error).code, 'E_PERF_SCRIPT_INVALID')
+      return true
+    })
+    assert.deepEqual(runner.calls, [])
+  })
+})
+
+test('blocking TODOs stop the run and say which ones', async () => {
+  await withRoot(async (root) => {
+    const artifacts = await seedScript(root, { todos: [{ key: 'path-param:x', kind: 'path-param', severity: 'block', message: 'bind it' }] })
+    const perf = createPerf({ root, store: sceneStore(), probe: envWithBrowser, recorder: fakeRecorder(), artifacts, runner: fakeRunner() })
+    await assert.rejects(() => perf.startRun({ siteId: 's', sceneId: 'perf/下单主流程' }), (error) => {
+      const anyError = /** @type {any} */ (error)
+      assert.equal(anyError.code, 'E_PERF_SCRIPT_INVALID')
+      assert.equal(anyError.details.blocking.length, 1)
+      return true
+    })
+  })
+})
+
+test('load needs a passing smoke for the same script', async () => {
+  await withRoot(async (root) => {
+    const artifacts = await seedScript(root)
+    const perf = createPerf({ root, store: sceneStore(), probe: envWithBrowser, recorder: fakeRecorder(), artifacts, runner: fakeRunner() })
+
+    await assert.rejects(() => perf.startRun({ siteId: 's', sceneId: 'perf/下单主流程', mode: 'load' }), (error) => {
+      assert.equal(/** @type {any} */ (error).code, 'E_PERF_SMOKE_REQUIRED')
+      assert.match(String(/** @type {any} */ (error).message), /smoke/i)
+      return true
+    })
+  })
+})
+
+test('a passing smoke unlocks load, and the stages come from the scene', async () => {
+  await withRoot(async (root) => {
+    const artifacts = await seedSmoke(root, { scriptId: 'abc1234' })
+    const runner = fakeRunner()
+    const perf = createPerf({ root, store: sceneStore(), probe: envWithBrowser, recorder: fakeRecorder(), artifacts, runner })
+    const started = await perf.startRun({ siteId: 's', sceneId: 'perf/下单主流程', mode: 'load' })
+    assert.equal(started.mode, 'load')
+    const call = runner.calls[0]
+    assert.deepEqual(call.load.stages, [{ duration: '1m', target: 1 }], 'stages are read from perf-spec')
+    assert.equal(call.scriptId, 'abc1234')
+    assert.equal(call.baseUrl, 'https://test.example.com')
+  })
+})
+
+test('a smoke for a different script does not unlock load', async () => {
+  await withRoot(async (root) => {
+    // Current script is abc1234; the smoke belongs to an older script.
+    const artifacts = await seedSmoke(root, { scriptId: 'abc1234', smokeScriptId: 'old0000' })
+    const perf = createPerf({ root, store: sceneStore(), probe: envWithBrowser, recorder: fakeRecorder(), artifacts, runner: fakeRunner() })
+    await assert.rejects(() => perf.startRun({ siteId: 's', sceneId: 'perf/下单主流程', mode: 'load' }), (error) => {
+      assert.equal(/** @type {any} */ (error).code, 'E_PERF_SMOKE_REQUIRED')
+      return true
+    })
+  })
+})
+
+test('a failing smoke (exit 99) does not unlock load', async () => {
+  await withRoot(async (root) => {
+    const artifacts = await seedSmoke(root, { exitCode: 99, summary: 'summary-threshold-failed.json' })
+    const verdict = await createPerf({ root, store: sceneStore(), probe: envWithBrowser, recorder: fakeRecorder(), artifacts, runner: fakeRunner() })
+      .latestSmokeVerdict('s', 'perf/下单主流程', 'abc1234')
+    assert.equal(verdict.verdict, 'FAIL')
+  })
+})
+
+test('the single-flight lock refuses a second run', async () => {
+  await withRoot(async (root) => {
+    const artifacts = await seedScript(root)
+    const runner = fakeRunner({ running: true })
+    const perf = createPerf({ root, store: sceneStore(), probe: envWithBrowser, recorder: fakeRecorder(), artifacts, runner })
+    await assert.rejects(() => perf.startRun({ siteId: 's', sceneId: 'perf/下单主流程' }), (error) => {
+      assert.equal(/** @type {any} */ (error).code, 'E_PERF_BUSY')
+      return true
+    })
+    assert.deepEqual(runner.calls, [])
+  })
+})
+
+test('a production target needs an explicit confirmation', async () => {
+  await withRoot(async (root) => {
+    const prod = `\`\`\`yaml
+perf-spec:
+  version: 1
+  target: prod
+  baseUrl: https://prod.example.com
+  confirmPhrase: ORDER-PROD-OK
+  loadModel:
+    mode: stages
+    stages: [{ duration: 1m, target: 1 }]
+\`\`\`
+`
+    const artifacts = await seedScript(root, { baseUrl: 'https://prod.example.com' })
+    const store = fakeStore({ 'perf/下单主流程': prod })
+    const perf = createPerf({ root, store, probe: envWithBrowser, recorder: fakeRecorder(), artifacts, runner: fakeRunner() })
+    await assert.rejects(() => perf.startRun({ siteId: 's', sceneId: 'perf/下单主流程' }), (error) => {
+      assert.equal(/** @type {any} */ (error).code, 'E_PERF_PROD_BLOCKED')
+      return true
+    })
   })
 })
