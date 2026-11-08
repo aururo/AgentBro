@@ -1,0 +1,164 @@
+{
+    "metrics": {
+        "vus": {
+            "value": 2,
+            "min": 2,
+            "max": 2
+        },
+        "http_req_waiting": {
+            "avg": 0.10707118478424281,
+            "min": 0,
+            "med": 0,
+            "max": 9.8398,
+            "p(90)": 0.5195,
+            "p(95)": 1.016575
+        },
+        "http_req_duration": {
+            "avg": 0.1418724201874397,
+            "min": 0,
+            "med": 0,
+            "max": 10.3618,
+            "p(90)": 0.5885,
+            "p(95)": 1.085375,
+            "thresholds": {
+                "p(95)<500": false
+            }
+        },
+        "http_req_failed": {
+            "passes": 0,
+            "fails": 39906,
+            "thresholds": {
+                "rate<0.01": false
+            },
+            "value": 0
+        },
+        "http_req_connecting": {
+            "p(95)": 0,
+            "avg": 0.000026702751465944974,
+            "min": 0,
+            "med": 0,
+            "max": 0.5328,
+            "p(90)": 0
+        },
+        "vus_max": {
+            "value": 2,
+            "min": 2,
+            "max": 2
+        },
+        "data_sent": {
+            "count": 5726803,
+            "rate": 1360699.4525651506
+        },
+        "group_duration": {
+            "avg": 0.1976748684408356,
+            "min": 0,
+            "med": 0,
+            "max": 11.4285,
+            "p(90)": 1.0078,
+            "p(95)": 1.181975
+        },
+        "iteration_duration": {
+            "avg": 0.4153984563724735,
+            "min": 0,
+            "med": 0,
+            "max": 11.9623,
+            "p(90)": 1.19766,
+            "p(95)": 1.3935199999999972
+        },
+        "data_received": {
+            "count": 9477885,
+            "rate": 2251963.7799616037
+        },
+        "http_req_blocked": {
+            "max": 1.544,
+            "p(90)": 0,
+            "p(95)": 0,
+            "avg": 0.0016574149250739238,
+            "min": 0,
+            "med": 0
+        },
+        "http_req_sending": {
+            "p(95)": 0,
+            "avg": 0.009922968977096165,
+            "min": 0,
+            "med": 0,
+            "max": 1.9945,
+            "p(90)": 0
+        },
+        "checks": {
+            "passes": 39906,
+            "fails": 0,
+            "value": 1
+        },
+        "http_req_receiving": {
+            "med": 0,
+            "max": 1.9945,
+            "p(90)": 0,
+            "p(95)": 0,
+            "avg": 0.02487826642610133,
+            "min": 0
+        },
+        "iterations": {
+            "rate": 4740.871333802202,
+            "count": 19953
+        },
+        "http_req_duration{expected_response:true}": {
+            "min": 0,
+            "med": 0,
+            "max": 10.3618,
+            "p(90)": 0.5885,
+            "p(95)": 1.085375,
+            "avg": 0.1418724201874397
+        },
+        "http_req_tls_handshaking": {
+            "avg": 0,
+            "min": 0,
+            "med": 0,
+            "max": 0,
+            "p(90)": 0,
+            "p(95)": 0
+        },
+        "http_reqs": {
+            "count": 39906,
+            "rate": 9481.742667604403
+        }
+    },
+    "root_group": {
+        "name": "",
+        "path": "",
+        "id": "d41d8cd98f00b204e9800998ecf8427e",
+        "groups": {
+            "登录": {
+                "path": "::登录",
+                "id": "bbc0fe24960d0b2b5faf20ef3c1ddf7b",
+                "groups": {},
+                "checks": {
+                        "login 200": {
+                            "name": "login 200",
+                            "path": "::登录::login 200",
+                            "id": "209f0abaac98c09da06c6cfad125e057",
+                            "passes": 19953,
+                            "fails": 0
+                        }
+                    },
+                "name": "登录"
+            },
+            "下单": {
+                "name": "下单",
+                "path": "::下单",
+                "id": "8e0c49779a67effa63e3859ed9b175ce",
+                "groups": {},
+                "checks": {
+                        "order 201": {
+                            "path": "::下单::order 201",
+                            "id": "35896f4712ab0c34f81ba45c05a5747b",
+                            "passes": 19953,
+                            "fails": 0,
+                            "name": "order 201"
+                        }
+                    }
+            }
+        },
+        "checks": {}
+    }
+}

@@ -1,0 +1,1179 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WikiHub 性能测试模块 — 前端样式预览</title>
+<style>
+  /* ==================================================================
+     预览页外壳（不属于插件样式，仅用于摆放多张面板截图）
+     ================================================================== */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 13px; line-height: 20px;
+    background: #e8eaed; color: #1f2329; padding: 24px 24px 60px;
+  }
+  .page { max-width: 1200px; margin: 0 auto; }
+  h1 { font-size: 18px; margin-bottom: 4px; }
+  .page-sub { color: #5f6672; margin-bottom: 8px; font-size: 12px; }
+  .page-sub code { background: #dde1e6; padding: 1px 5px; border-radius: 4px; font-size: 11px; }
+  h2 { font-size: 14px; margin: 30px 0 4px; color: #1f2329; }
+  h2 .n { color: #8a9099; font-weight: 600; margin-right: 6px; }
+  .cap { color: #5f6672; font-size: 12px; margin: 2px 2px 10px; }
+  .cap b { color: #1f2329; font-weight: 600; }
+  .note {
+    background: #fff8e6; border: 1px solid #f0dcae; border-radius: 8px;
+    padding: 10px 12px; font-size: 12px; color: #6b5320; margin: 10px 0 0;
+  }
+  .note code { background: rgba(0,0,0,.06); padding: 1px 4px; border-radius: 3px; }
+
+  /* ==================================================================
+     以下为插件样式：token 与尺度 1:1 对齐 packages/dsh-desktop-wikihub/src/styles.css
+     -- 只使用 --dsw-alias-* 语义 token（亮色分支取值）
+     -- 每个选择器都从 .dsh-wikihub-root 开始，避免泄漏到宿主
+     -- 工具栏 min-height 48 / rail 48 / 图标按钮 36 / 按钮圆角 6 / 指标数字 20
+     ================================================================== */
+  .demo-root {
+    --dsw-alias-label-primary: #0f1115;
+    --dsw-alias-label-secondary: #81858c;
+    --dsw-alias-label-tertiary: #adb2b8;
+    --dsw-alias-label-primary-inverted: #ffffff;
+    --dsw-alias-bg-layer-1: #ffffff;
+    --dsw-alias-bg-layer-2: #f9fafb;
+    --dsw-alias-bg-multi-select: #eaf1fe;
+    --dsw-alias-bg-mask-1: rgba(15, 17, 21, 0.12);
+    --dsw-alias-border-l1: rgba(0, 0, 0, 0.04);
+    --dsw-alias-border-l2: rgba(0, 0, 0, 0.10);
+    --dsw-alias-interactive-bg-hover: rgba(38, 49, 72, 0.06);
+    --dsw-alias-interactive-bg-active: rgba(38, 49, 72, 0.10);
+    --dsw-alias-interactive-bg-hover-danger: rgba(236, 19, 19, 0.08);
+    --dsw-alias-brand-primary: #4176e6;
+    --dsw-alias-button-primary-fill: #1f2329;
+    --dsw-alias-button-primary-hover: #33383f;
+    --dsw-alias-state-warn-primary: #f59e0b;
+    --dsw-alias-state-warn-tertiary: #fff6e5;
+    --dsw-alias-state-warn-label: #8a5b00;
+    --dsw-alias-state-error-primary: #ec1313;
+    --dsw-alias-state-error-secondary: #fdecec;
+    --dsw-alias-state-success-primary: #22c55e;
+    --dsw-alias-state-success-tertiary: #e8f8ee;
+    --dsw-radius-xs: 4px;
+    --dsw-radius-sm: 8px;
+    --dsw-radius-md: 12px;
+
+    width: 100%; height: 780px;
+    container-type: inline-size; container-name: wikihub;
+    display: flex; flex-direction: column;
+    font-size: 13px; line-height: 20px;
+    color: var(--dsw-alias-label-primary);
+    background: var(--dsw-alias-bg-layer-1);
+    border: 1px solid #d5d9e0; border-radius: 10px;
+    overflow: hidden; position: relative;
+  }
+  .demo-root.short { height: auto; }
+  /* 内容比面板矮时按内容收边，避免留出看着像 bug 的空白 */
+  .demo-root.auto { height: auto; min-height: 620px; }
+  .demo-root.main-only { height: 700px; }
+
+  /* --- toolbar ------------------------------------------------------- */
+  .dsh-wikihub-root .whToolbar {
+    flex: none; display: flex; align-items: center; gap: 8px;
+    min-height: 48px; padding: 0 12px;
+    border-bottom: 1px solid var(--dsw-alias-border-l2);
+    background: var(--dsw-alias-bg-layer-1);
+  }
+  .dsh-wikihub-root .whToolbarTitle {
+    font-size: 14px; font-weight: 600; white-space: nowrap;
+  }
+  .dsh-wikihub-root .whToolbarSpacer { flex: 1; min-width: 8px; }
+  .dsh-wikihub-root .whSmall { font-size: 12px; }
+  .dsh-wikihub-root .whMuted { color: var(--dsw-alias-label-secondary); }
+
+  /* --- buttons ------------------------------------------------------- */
+  .dsh-wikihub-root .whBtn {
+    font: inherit; display: inline-flex; align-items: center; gap: 6px;
+    border: 1px solid var(--dsw-alias-border-l2);
+    background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary);
+    border-radius: 6px; padding: 4px 10px; cursor: pointer; white-space: nowrap;
+  }
+  .dsh-wikihub-root .whBtn:hover { background: var(--dsw-alias-interactive-bg-hover); }
+  .dsh-wikihub-root .whBtnPrimary {
+    background: var(--dsw-alias-button-primary-fill);
+    border-color: transparent; color: var(--dsw-alias-label-primary-inverted);
+  }
+  .dsh-wikihub-root .whBtnPrimary:hover { background: var(--dsw-alias-button-primary-hover); }
+  .dsh-wikihub-root .whBtnGhost { border-color: transparent; background: transparent; }
+  .dsh-wikihub-root .whBtnDanger { color: var(--dsw-alias-state-error-primary); }
+  .dsh-wikihub-root .whBtnIcon { padding: 4px 6px; }
+  .dsh-wikihub-root .whBtn:disabled { opacity: .55; cursor: default; background: var(--dsw-alias-bg-layer-1); }
+  .dsh-wikihub-root .whBtnPrimary:disabled { background: var(--dsw-alias-button-primary-fill); }
+  .dsh-wikihub-root .whInput {
+    font: inherit; border: 1px solid var(--dsw-alias-border-l2); border-radius: var(--dsw-radius-md);
+    padding: 6px 10px; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary);
+  }
+  .dsh-wikihub-root .whSeg {
+    display: inline-flex; gap: 2px; padding: 2px; border-radius: var(--dsw-radius-sm);
+    background: var(--dsw-alias-bg-layer-2);
+  }
+  .dsh-wikihub-root .whSegBtn {
+    border: none; background: transparent; font: inherit; font-size: 12px;
+    color: var(--dsw-alias-label-secondary); padding: 3px 10px; border-radius: 6px; cursor: pointer;
+  }
+  .dsh-wikihub-root .whSegBtn[aria-pressed='true'] {
+    background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary);
+    box-shadow: 0 1px 2px var(--dsw-alias-border-l2); font-weight: 600;
+  }
+
+  /* --- body layout --------------------------------------------------- */
+  .dsh-wikihub-root .whBody { display: flex; flex: 1; min-height: 0; min-width: 0; }
+  .dsh-wikihub-root .whRail {
+    flex: none; width: 48px; display: flex; flex-direction: column;
+    align-items: center; gap: 2px; padding: 8px 0;
+    border-right: 1px solid var(--dsw-alias-border-l2);
+    background: var(--dsw-alias-bg-layer-1);
+  }
+  .dsh-wikihub-root .whRailBtn {
+    position: relative; width: 36px; height: 36px;
+    display: flex; align-items: center; justify-content: center;
+    border: none; border-radius: 8px; background: transparent;
+    color: var(--dsw-alias-label-secondary); cursor: pointer;
+  }
+  .dsh-wikihub-root .whRailBtn:hover {
+    background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary);
+  }
+  .dsh-wikihub-root .whRailBtn[aria-current='page'] {
+    background: var(--dsw-alias-bg-multi-select);
+    background: color-mix(in srgb, var(--dsw-alias-brand-primary) 14%, transparent);
+    color: var(--dsw-alias-brand-primary);
+  }
+  .dsh-wikihub-root .whRailBtn[aria-current='page']::before {
+    content: ''; position: absolute; left: -6px; top: 50%;
+    width: 3px; height: 18px; border-radius: 0 2px 2px 0;
+    transform: translateY(-50%); background: var(--dsw-alias-brand-primary);
+  }
+  .dsh-wikihub-root .whRailTip {
+    position: absolute; left: calc(100% + 6px); top: 50%; transform: translateY(-50%);
+    padding: 2px 8px; border-radius: 4px;
+    background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary);
+    border: 1px solid var(--dsw-alias-border-l2);
+    box-shadow: 0 6px 18px var(--dsw-alias-bg-mask-1);
+    white-space: nowrap; font-size: 12px; opacity: 0; pointer-events: none; z-index: 20;
+  }
+  .dsh-wikihub-root .whRailBtn:hover .whRailTip { opacity: 1; }
+  .dsh-wikihub-root .whRailSpacer { flex: 1; }
+  .dsh-wikihub-root .whRailDivider {
+    width: 20px; height: 1px; margin: 4px 0;
+    background: var(--dsw-alias-border-l2);
+  }
+
+  /* --- left panel ---------------------------------------------------- */
+  .dsh-wikihub-root .whSide {
+    flex: none; width: 248px; display: flex; flex-direction: column;
+    min-width: 0; min-height: 0;
+    border-right: 1px solid var(--dsw-alias-border-l2);
+    background: var(--dsw-alias-bg-layer-1); overflow: hidden;
+  }
+  .dsh-wikihub-root .whSideHead {
+    flex: none; display: flex; align-items: center; gap: 6px;
+    min-height: 36px; padding: 0 10px 0 12px;
+    color: var(--dsw-alias-label-secondary); font-size: 12px; font-weight: 600;
+    border-bottom: 1px solid var(--dsw-alias-border-l1);
+  }
+  .dsh-wikihub-root .whSideBody { flex: 1; overflow: auto; padding: 6px 0; min-height: 0; }
+
+  /* 新增：场景列表行（尺寸与 .whTreeNode 一致，行高 26） */
+  .dsh-wikihub-root .perfItem {
+    display: flex; align-items: center; gap: 8px;
+    width: 100%; padding: 4px 12px; min-height: 26px;
+    border: none; background: transparent; font: inherit; text-align: left;
+    color: var(--dsw-alias-label-primary); cursor: pointer;
+  }
+  .dsh-wikihub-root .perfItem:hover { background: var(--dsw-alias-interactive-bg-hover); }
+  .dsh-wikihub-root .perfItem[aria-current='true'] {
+    background: var(--dsw-alias-bg-multi-select); font-weight: 600;
+  }
+  .dsh-wikihub-root .perfItemName {
+    flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .dsh-wikihub-root .perfItemMeta {
+    flex: none; font-size: 11px; color: var(--dsw-alias-label-tertiary);
+    font-variant-numeric: tabular-nums;
+  }
+  .dsh-wikihub-root .perfGroup {
+    padding: 10px 12px 4px; font-size: 11px; font-weight: 600;
+    color: var(--dsw-alias-label-tertiary); letter-spacing: .02em;
+  }
+
+  /* --- main ---------------------------------------------------------- */
+  .dsh-wikihub-root .whMain {
+    flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: auto;
+  }
+
+  /* 新增：场景头（复用 .whDocHead 的尺度） */
+  .dsh-wikihub-root .perfHead {
+    flex: none; display: flex; align-items: center; gap: 8px;
+    padding: 10px 16px 8px; min-width: 0;
+  }
+  .dsh-wikihub-root .perfHeadTitle {
+    font-size: 15px; font-weight: 600; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .dsh-wikihub-root .perfHeadPath {
+    font-size: 12px; color: var(--dsw-alias-label-tertiary);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+
+  /* 复用：阶段切换条 = .whTabs，带完成勾 */
+  .dsh-wikihub-root .whTabs {
+    flex: none; display: flex; gap: 2px; padding: 0 16px;
+    border-bottom: 1px solid var(--dsw-alias-border-l2);
+  }
+  .dsh-wikihub-root .whTab {
+    border: none; background: transparent; font: inherit;
+    color: var(--dsw-alias-label-secondary);
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 8px 10px 9px; cursor: pointer;
+    border-bottom: 2px solid transparent; margin-bottom: -1px;
+  }
+  .dsh-wikihub-root .whTab[aria-selected='true'] {
+    color: var(--dsw-alias-brand-primary); border-bottom-color: var(--dsw-alias-brand-primary);
+    font-weight: 600;
+  }
+  .dsh-wikihub-root .whTabStep {
+    flex: none; width: 16px; height: 16px; border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 10px; font-weight: 600;
+    background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-tertiary);
+  }
+  .dsh-wikihub-root .whTab[data-done='true'] .whTabStep {
+    background: var(--dsw-alias-state-success-tertiary);
+    color: var(--dsw-alias-state-success-primary);
+  }
+  .dsh-wikihub-root .whTab[aria-selected='true'] .whTabStep {
+    background: var(--dsw-alias-bg-multi-select); color: var(--dsw-alias-brand-primary);
+  }
+
+  .dsh-wikihub-root .perfBody { padding: 14px 16px 20px; display: flex; flex-direction: column; gap: 14px; }
+
+  /* --- 复用：指标卡 .whGrid + .whStat -------------------------------- */
+  .dsh-wikihub-root .whGrid {
+    display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  }
+  .dsh-wikihub-root .whStat {
+    border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px;
+    padding: 10px 12px; background: var(--dsw-alias-bg-layer-1);
+  }
+  .dsh-wikihub-root .whStatLabel { font-size: 12px; color: var(--dsw-alias-label-secondary); }
+  .dsh-wikihub-root .whStatValue {
+    font-size: 20px; font-weight: 600; line-height: 1.3;
+    font-variant-numeric: tabular-nums;
+  }
+  .dsh-wikihub-root .whStatNote { font-size: 11px; color: var(--dsw-alias-label-tertiary); }
+  .dsh-wikihub-root .whStatValue small { font-size: 12px; font-weight: 400; color: var(--dsw-alias-label-secondary); }
+
+  /* --- 复用：分区 .whSection ---------------------------------------- */
+  .dsh-wikihub-root .whSection { display: flex; flex-direction: column; }
+  .dsh-wikihub-root .whSectionTitle {
+    font-size: 12px; font-weight: 600; color: var(--dsw-alias-label-secondary);
+    margin-bottom: 8px; display: flex; align-items: center; gap: 6px;
+  }
+  .dsh-wikihub-root .whSectionTitle .whToolbarSpacer { flex: 1; }
+
+  /* 新增：两张图并排（窄容器自动叠） */
+  .dsh-wikihub-root .perfDuo { display: flex; gap: 14px; align-items: stretch; }
+  .dsh-wikihub-root .perfDuo > * { flex: 1 1 0; min-width: 0; }
+  @container wikihub (max-width: 760px) { .dsh-wikihub-root .perfDuo { flex-direction: column; } }
+
+  .dsh-wikihub-root .perfCard {
+    border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px;
+    background: var(--dsw-alias-bg-layer-1); padding: 10px 12px; min-width: 0;
+  }
+  .dsh-wikihub-root .perfCardHead {
+    display: flex; align-items: center; gap: 6px; margin-bottom: 8px;
+    font-size: 12px; font-weight: 600;
+  }
+
+  /* --- 复用：日志行 .whLogRow --------------------------------------- */
+  .dsh-wikihub-root .whLogRow {
+    display: flex; align-items: flex-start; gap: 8px; padding: 3px 12px;
+    font-variant-numeric: tabular-nums;
+  }
+  .dsh-wikihub-root .whLogRow:hover { background: var(--dsw-alias-interactive-bg-hover); }
+  .dsh-wikihub-root .whLogTime {
+    flex: none; width: 64px; color: var(--dsw-alias-label-tertiary); font-size: 12px;
+  }
+  .dsh-wikihub-root .whLogPhase {
+    flex: none; width: 108px; color: var(--dsw-alias-label-secondary);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .dsh-wikihub-root .whLogMsg { flex: 1; min-width: 0; }
+  .dsh-wikihub-root .whLogRow[data-level='warn'] .whLogMsg { color: var(--dsw-alias-state-warn-label); }
+  .dsh-wikihub-root .whLogRow[data-level='error'] .whLogMsg { color: var(--dsw-alias-state-error-primary); }
+
+  /* --- 复用：状态点 / 徽标 ------------------------------------------ */
+  .dsh-wikihub-root .whDot { width: 6px; height: 6px; border-radius: 50%; background: var(--dsw-alias-label-tertiary); }
+  .dsh-wikihub-root .whDot[data-state='saved'] { background: var(--dsw-alias-state-success-primary); }
+  .dsh-wikihub-root .whDot[data-state='dirty'] { background: var(--dsw-alias-state-warn-primary); }
+  .dsh-wikihub-root .whDot[data-state='error'] { background: var(--dsw-alias-state-error-primary); }
+  .dsh-wikihub-root .perfPulse { animation: perfPulse 1.6s ease-in-out infinite; }
+  @keyframes perfPulse { 0%, 100% { opacity: 1; } 50% { opacity: .28; } }
+
+  .dsh-wikihub-root .perfBadge {
+    flex: none; display: inline-flex; align-items: center; gap: 4px;
+    padding: 1px 7px; border-radius: 10px; font-size: 11px; font-weight: 600;
+    background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-secondary);
+  }
+  .dsh-wikihub-root .perfBadge[data-kind='run'] {
+    background: var(--dsw-alias-bg-multi-select); color: var(--dsw-alias-brand-primary);
+  }
+  .dsh-wikihub-root .perfBadge[data-kind='pass'] {
+    background: var(--dsw-alias-state-success-tertiary); color: #15803d;
+  }
+  .dsh-wikihub-root .perfBadge[data-kind='fail'] {
+    background: var(--dsw-alias-state-error-secondary); color: var(--dsw-alias-state-error-primary);
+  }
+  .dsh-wikihub-root .perfBadge[data-kind='warn'] {
+    background: var(--dsw-alias-state-warn-tertiary); color: var(--dsw-alias-state-warn-label);
+  }
+
+  /* --- 复用：提示条 .whBanner --------------------------------------- */
+  .dsh-wikihub-root .whBanner {
+    flex: none; display: flex; align-items: center; gap: 8px;
+    padding: 8px 12px; border-radius: 6px; margin: 0 16px 0;
+    background: var(--dsw-alias-state-warn-tertiary); color: var(--dsw-alias-state-warn-label);
+  }
+  .dsh-wikihub-root .whBanner[data-kind='error'] {
+    background: var(--dsw-alias-state-error-secondary); color: var(--dsw-alias-label-primary);
+  }
+  .dsh-wikihub-root .whBannerActions { margin-left: auto; display: flex; gap: 6px; }
+
+  /* --- 复用：居中空态 ------------------------------------------------ */
+  .dsh-wikihub-root .whCenter {
+    flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 6px; padding: 24px; text-align: center;
+  }
+  .dsh-wikihub-root .whCenterTitle { font-size: 14px; font-weight: 600; }
+  .dsh-wikihub-root .whCenterHint { color: var(--dsw-alias-label-secondary); max-width: 380px; }
+
+  /* --- 表格（报告段） ------------------------------------------------ */
+  .dsh-wikihub-root .perfTable { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  .dsh-wikihub-root .perfTable th {
+    text-align: left; font-size: 11px; font-weight: 600;
+    color: var(--dsw-alias-label-tertiary); padding: 4px 8px;
+    border-bottom: 1px solid var(--dsw-alias-border-l2); white-space: nowrap;
+  }
+  .dsh-wikihub-root .perfTable td {
+    padding: 5px 8px; border-bottom: 1px solid var(--dsw-alias-border-l1);
+  }
+  .dsh-wikihub-root .perfTable tr:last-child td { border-bottom: none; }
+  .dsh-wikihub-root .perfTable .num { text-align: right; }
+  .dsh-wikihub-root .perfTable code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 11.5px; background: var(--dsw-alias-bg-layer-2);
+    padding: 1px 5px; border-radius: 4px;
+  }
+
+  /* --- 进度条（接口 p95 排序） -------------------------------------- */
+  .dsh-wikihub-root .perfBarRow { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
+  .dsh-wikihub-root .perfBarName {
+    flex: none; width: 168px; font-size: 12px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .dsh-wikihub-root .perfBarTrack {
+    flex: 1; height: 8px; border-radius: 4px; background: var(--dsw-alias-bg-layer-2); overflow: hidden;
+  }
+  .dsh-wikihub-root .perfBarFill {
+    display: block; height: 100%; border-radius: 4px;
+    background: color-mix(in srgb, var(--dsw-alias-brand-primary) 55%, transparent);
+  }
+  .dsh-wikihub-root .perfBarFill[data-hot='true'] { background: var(--dsw-alias-state-error-primary); opacity: .75; }
+  .dsh-wikihub-root .perfBarVal {
+    flex: none; width: 62px; text-align: right; font-size: 12px;
+    color: var(--dsw-alias-label-secondary); font-variant-numeric: tabular-nums;
+  }
+
+  /* --- TODO 确认行（脚本段） ---------------------------------------- */
+  .dsh-wikihub-root .perfTodo {
+    display: flex; align-items: flex-start; gap: 10px;
+    padding: 10px 12px; border: 1px solid var(--dsw-alias-border-l2);
+    border-radius: 8px; background: var(--dsw-alias-bg-layer-1);
+  }
+  .dsh-wikihub-root .perfTodo + .perfTodo { margin-top: 8px; }
+  .dsh-wikihub-root .perfTodo[data-kind='block'] {
+    border-color: #f3c9c9; background: #fffdfd;
+  }
+  .dsh-wikihub-root .perfTodoBody { flex: 1; min-width: 0; }
+  .dsh-wikihub-root .perfTodoTitle { font-weight: 600; display: flex; align-items: center; gap: 6px; }
+  .dsh-wikihub-root .perfTodoTitle code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 11.5px; background: var(--dsw-alias-bg-layer-2); padding: 1px 5px; border-radius: 4px;
+  }
+  .dsh-wikihub-root .perfTodoHint { font-size: 12px; color: var(--dsw-alias-label-secondary); margin-top: 2px; }
+  .dsh-wikihub-root .perfTodoSide { flex: none; display: flex; flex-direction: column; gap: 6px; align-items: flex-end; }
+
+  .dsh-wikihub-root .perfCode {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 11.5px; background: var(--dsw-alias-bg-layer-2);
+    border: 1px solid var(--dsw-alias-border-l1); border-radius: 6px;
+    padding: 8px 10px; color: var(--dsw-alias-label-primary);
+    white-space: pre-wrap; overflow: auto; max-width: 520px; margin: 0 auto;
+  }
+
+  .dsh-wikihub-root .perfEnvRow {
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    font-size: 12px; color: var(--dsw-alias-label-secondary);
+  }
+  .dsh-wikihub-root .perfEnvRow > span { display: inline-flex; align-items: center; gap: 5px; }
+
+  .dsh-wikihub-root .perfFoot {
+    margin-top: auto; padding: 8px 16px;
+    border-top: 1px solid var(--dsw-alias-border-l1);
+    font-size: 11px; color: var(--dsw-alias-label-tertiary);
+    display: flex; gap: 12px; flex-wrap: wrap;
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <h1>WikiHub 性能测试模块 · 前端样式预览</h1>
+  <div class="page-sub">
+    对应规范 <code>docs/wikihub-perf-implementation-spec.md</code>（v1.0 已冻结）与决策记录 <code>docs/wikihub-perf-module-plan.md</code>。所有尺度取自
+    <code>src/styles.css</code> 真实取值（工具栏 48 / rail 48 / 图标按钮 36 / 按钮圆角 6 / 指标数字 20 / 左栏 248），
+    颜色只用 <code>--dsw-alias-*</code> 语义 token 的亮色分支。
+  </div>
+
+  <div class="note">
+    <b>新增的东西只有 6 组：</b>rail 第 11 项（性能测试）、左栏场景列表、阶段切换条、指标卡组合、TODO 确认行、报告表格。
+    其余（按钮 / 分段控件 / 状态点 / 日志行 / 提示条 / 空态 / 指标卡）全部复用现有类，不改既有样式。
+  </div>
+
+  <!-- ============================================================ -->
+  <h2><span class="n">01</span>性能测试 · 运行中（默认落地视图）</h2>
+  <div class="cap">
+    压测进行时：<b>指标卡 → VU 曲线 + 慢接口排序 → 事件流</b> 三段。左侧栏在本视图切换为场景列表，
+    其他视图仍是目录树。
+  </div>
+
+  <div class="demo-root auto dsh-wikihub-root">
+    <!-- toolbar -->
+    <header class="whToolbar">
+      <span class="whToolbarTitle">知识库</span>
+      <button class="whBtn whBtnGhost whBtnIcon" title="后退">←</button>
+      <button class="whBtn whBtnGhost whBtnIcon" title="前进" disabled>→</button>
+      <select class="whInput" style="width:auto;max-width:180px;padding:3px 6px;">
+        <option>电商测试库</option>
+      </select>
+      <button class="whBtn whBtnIcon" title="新建知识库">＋<span style="margin-left:2px">新建</span></button>
+      <span class="whToolbarSpacer"></span>
+      <button class="whBtn whBtnGhost whBtnIcon" title="侧栏">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg>
+      </button>
+      <button class="whBtn whBtnGhost whBtnIcon" title="右栏">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg>
+      </button>
+      <button class="whBtn whBtnGhost whBtnIcon" title="刷新">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 5v6h-6"/></svg>
+      </button>
+    </header>
+
+    <div class="whBody">
+      <!-- rail -->
+      <nav class="whRail">
+        <button class="whRailBtn" title="知识库页面">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>
+          <span class="whRailTip">知识库页面</span>
+        </button>
+        <button class="whRailBtn" title="搜索">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+          <span class="whRailTip">搜索</span>
+        </button>
+        <button class="whRailBtn" title="图谱">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="17" cy="17" r="2.5"/><path d="M8.2 16.3 15.6 7.9M8.4 18.2l6.2-.8"/></svg>
+          <span class="whRailTip">图谱</span>
+        </button>
+        <button class="whRailBtn" title="资料">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 8h18v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M2 4h20v4H2z"/><path d="M10 12h4"/></svg>
+          <span class="whRailTip">资料</span>
+        </button>
+        <button class="whRailBtn" title="检查">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 11l3 3 8-8"/><path d="M21 12v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h11"/></svg>
+          <span class="whRailTip">检查</span>
+        </button>
+                <button class="whRailBtn" title="审阅">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5h13l3.5 7v5a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-5z"/></svg>
+          <span class="whRailTip">审阅</span>
+        </button>
+        <span class="whRailDivider"></span>
+        <button class="whRailBtn" title="运行日志">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 17l5-5-5-5"/><path d="M12 19h8"/></svg>
+          <span class="whRailTip">运行日志</span>
+        </button>
+        <button class="whRailBtn" aria-current="page" title="性能测试">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 15a8 8 0 1 1 16 0"/><path d="M12 15l4-4"/><circle cx="12" cy="15" r="1.4"/></svg>
+          <span class="whRailTip">性能测试</span>
+        </button>
+        <button class="whRailBtn" title="技能">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/></svg>
+          <span class="whRailTip">技能</span>
+        </button>
+        <button class="whRailBtn" title="概览">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-4v-6H9v6H5a1 1 0 0 1-1-1z"/></svg>
+          <span class="whRailTip">概览</span>
+        </button>
+        <span class="whRailSpacer"></span>
+        <button class="whRailBtn" title="设置">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a1.9 1.9 0 1 1-2.7 2.7l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a1.9 1.9 0 1 1-3.8 0v-.1a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a1.9 1.9 0 1 1-2.7-2.7l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a1.9 1.9 0 1 1 0-3.8h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a1.9 1.9 0 1 1 2.7-2.7l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a1.9 1.9 0 1 1 3.8 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a1.9 1.9 0 1 1 2.7 2.7l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a1.9 1.9 0 1 1 0 3.8h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>
+          <span class="whRailTip">设置</span>
+        </button>
+      </nav>
+
+      <!-- left: scenarios -->
+      <div class="whSide">
+        <div class="whSideHead">
+          <span>场景</span>
+          <span class="whToolbarSpacer"></span>
+          <button class="whBtn whBtnGhost whBtnIcon" title="刷新">↻</button>
+        </div>
+        <div class="whSideBody">
+          <button class="perfItem" aria-current="true">
+            <span class="whDot perfPulse" data-state="dirty"></span>
+            <span class="perfItemName">下单主流程</span>
+            <span class="perfItemMeta">运行中</span>
+          </button>
+          <button class="perfItem">
+            <span class="whDot" data-state="saved"></span>
+            <span class="perfItemName">商品搜索</span>
+            <span class="perfItemMeta">PASS</span>
+          </button>
+          <button class="perfItem">
+            <span class="whDot" data-state="error"></span>
+            <span class="perfItemName">购物车结算</span>
+            <span class="perfItemMeta">FAIL</span>
+          </button>
+          <button class="perfItem">
+            <span class="whDot"></span>
+            <span class="perfItemName">登录鉴权</span>
+            <span class="perfItemMeta">未录</span>
+          </button>
+          <div class="perfGroup">最近运行</div>
+          <button class="perfItem">
+            <span class="perfItemName whMuted">11-07 22:10 · 50VU</span>
+            <span class="perfItemMeta">FAIL</span>
+          </button>
+          <button class="perfItem">
+            <span class="perfItemName whMuted">11-07 21:49 · 冒烟</span>
+            <span class="perfItemMeta">PASS</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- main -->
+      <div class="whMain">
+        <div class="perfHead">
+          <span class="perfHeadTitle">下单主流程</span>
+          <span class="perfHeadPath">perf/下单主流程.md</span>
+          <span class="whToolbarSpacer"></span>
+          <span class="perfBadge" data-kind="run"><span class="whDot perfPulse" data-state="saved" style="background:currentColor"></span>运行中 02:41</span>
+          <button class="whBtn whBtnDanger">急停</button>
+        </div>
+
+        <div class="whTabs" role="tablist">
+          <button class="whTab" role="tab" aria-selected="false" data-done="true"><span class="whTabStep">✓</span>录制</button>
+          <button class="whTab" role="tab" aria-selected="false" data-done="true"><span class="whTabStep">✓</span>脚本</button>
+          <button class="whTab" role="tab" aria-selected="true"><span class="whTabStep">3</span>运行</button>
+          <button class="whTab" role="tab" aria-selected="false"><span class="whTabStep">4</span>报告</button>
+        </div>
+
+        <div class="perfBody">
+          <div class="perfEnvRow">
+            <span><span class="whDot" data-state="saved"></span>k6 v2.2.0</span>
+            <span><span class="whDot" data-state="saved"></span>Edge · 9321</span>
+            <span>目标 https://test.example.com</span>
+            <span>负载模型 1m→10 / 3m→50 / 1m→0</span>
+            <span class="whToolbarSpacer"></span>
+            <span>脚本 3f9a1c2 · 11-08 20:12</span>
+          </div>
+
+          <div class="whGrid">
+            <div class="whStat">
+              <div class="whStatLabel">TPS</div>
+              <div class="whStatValue">139.9</div>
+              <div class="whStatNote">累计 41,982 请求</div>
+            </div>
+            <div class="whStat">
+              <div class="whStatLabel">p95 延迟</div>
+              <div class="whStatValue">412 <small>ms</small></div>
+              <div class="whStatNote">阈值 &lt; 500 ms　<span class="perfBadge" data-kind="pass">达标</span></div>
+            </div>
+            <div class="whStat">
+              <div class="whStatLabel">失败率</div>
+              <div class="whStatValue">0.42 <small>%</small></div>
+              <div class="whStatNote">阈值 &lt; 1%　<span class="perfBadge" data-kind="pass">达标</span></div>
+            </div>
+            <div class="whStat">
+              <div class="whStatLabel">当前 VU</div>
+              <div class="whStatValue">50</div>
+              <div class="whStatNote">峰值 50 · 已迭代 1,742 次</div>
+            </div>
+          </div>
+
+          <div class="perfDuo">
+            <div class="perfCard">
+              <div class="perfCardHead">
+                <span>VU 曲线</span>
+                <span class="whToolbarSpacer"></span>
+                <span class="whSmall whMuted">1m → 10 → 50 → 0</span>
+              </div>
+              <svg viewBox="0 0 380 96" width="100%" height="96" style="display:block">
+                <!-- grid -->
+                <g stroke="#e9ecf1" stroke-width="1">
+                  <line x1="0" y1="8" x2="380" y2="8"/>
+                  <line x1="0" y1="34" x2="380" y2="34"/>
+                  <line x1="0" y1="60" x2="380" y2="60"/>
+                  <line x1="0" y1="86" x2="380" y2="86"/>
+                </g>
+                <!-- area -->
+                <path d="M0,86 L20,86 L60,60 L240,8 L300,8 L340,86 L380,86 Z"
+                      fill="#4176e6" fill-opacity="0.10"/>
+                <!-- step line -->
+                <path d="M0,86 L20,86 L60,60 L240,8 L300,8 L340,86 L380,86"
+                      fill="none" stroke="#4176e6" stroke-width="1.8" stroke-linejoin="round"/>
+                <!-- current marker at 02:41 of 05:00 -->
+                <line x1="205" y1="4" x2="205" y2="86" stroke="#adb2b8" stroke-width="1" stroke-dasharray="3 3"/>
+                <circle cx="205" cy="8" r="3.2" fill="#4176e6"/>
+                <text x="211" y="16" font-size="9.5" fill="#81858c">现在</text>
+                <!-- axis labels -->
+                <text x="0" y="95" font-size="9" fill="#adb2b8">0:00</text>
+                <text x="176" y="95" font-size="9" fill="#adb2b8">2:30</text>
+                <text x="352" y="95" font-size="9" fill="#adb2b8">5:00</text>
+              </svg>
+            </div>
+
+            <div class="perfCard">
+              <div class="perfCardHead">
+                <span>最慢接口（p95）</span>
+                <span class="whToolbarSpacer"></span>
+                <span class="whSmall whMuted">按 p95 降序</span>
+              </div>
+              <div class="perfBarRow">
+                <span class="perfBarName">POST /api/pay/callback</span>
+                <span class="perfBarTrack"><span class="perfBarFill" data-hot="true" style="width:100%"></span></span>
+                <span class="perfBarVal">1,240 ms</span>
+              </div>
+              <div class="perfBarRow">
+                <span class="perfBarName">POST /api/order</span>
+                <span class="perfBarTrack"><span class="perfBarFill" style="width:39%"></span></span>
+                <span class="perfBarVal">486 ms</span>
+              </div>
+              <div class="perfBarRow">
+                <span class="perfBarName">GET /api/sku/{id}</span>
+                <span class="perfBarTrack"><span class="perfBarFill" style="width:22%"></span></span>
+                <span class="perfBarVal">268 ms</span>
+              </div>
+              <div class="perfBarRow">
+                <span class="perfBarName">POST /api/auth/login</span>
+                <span class="perfBarTrack"><span class="perfBarFill" style="width:25%"></span></span>
+                <span class="perfBarVal">312 ms</span>
+              </div>
+              <div class="perfBarRow">
+                <span class="perfBarName">GET /api/cart</span>
+                <span class="perfBarTrack"><span class="perfBarFill" style="width:14%"></span></span>
+                <span class="perfBarVal">176 ms</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="whSection">
+            <div class="whSectionTitle">
+              <span>事件流</span>
+              <span class="whToolbarSpacer"></span>
+              <span class="whSmall whMuted">跟随中 · 每 2 s 刷新</span>
+            </div>
+            <div class="perfCard" style="padding:6px 0">
+              <div class="whLogRow">
+                <span class="whLogTime">20:41:07</span>
+                <span class="whLogPhase">thresholds</span>
+                <span class="whLogMsg">http_req_duration p(95)=412ms &lt; 500ms　已采样 41,982 条</span>
+              </div>
+              <div class="whLogRow">
+                <span class="whLogTime">20:40:52</span>
+                <span class="whLogPhase">stage.ramp</span>
+                <span class="whLogMsg">VU 30 → 50，当前 TPS 138.4</span>
+              </div>
+              <div class="whLogRow" data-level="warn">
+                <span class="whLogTime">20:40:31</span>
+                <span class="whLogPhase">slow.endpoint</span>
+                <span class="whLogMsg">POST /api/pay/callback p95 1,240ms，超过全局 p95 的 3 倍</span>
+              </div>
+              <div class="whLogRow">
+                <span class="whLogTime">20:39:58</span>
+                <span class="whLogPhase">smoke.passed</span>
+                <span class="whLogMsg">冒烟 1VU/30s 全绿，31 个 check 通过，允许加压</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2><span class="n">02</span>性能测试 · 录制中</h2>
+  <div class="cap">
+    录制由人操作浏览器完成。面板只负责：<b>起浏览器、数条数、收 HAR</b>。红色脉冲点 + 秒级计数是「正在录」的唯一信号，
+    避免用户以为没生效。
+  </div>
+
+  <div class="demo-root auto dsh-wikihub-root">
+    <header class="whToolbar">
+      <span class="whToolbarTitle">知识库</span>
+      <button class="whBtn whBtnGhost whBtnIcon" title="后退">←</button>
+      <button class="whBtn whBtnGhost whBtnIcon" title="前进" disabled>→</button>
+      <select class="whInput" style="width:auto;max-width:180px;padding:3px 6px;"><option>电商测试库</option></select>
+      <button class="whBtn whBtnIcon" title="新建知识库">＋<span style="margin-left:2px">新建</span></button>
+      <span class="whToolbarSpacer"></span>
+      <button class="whBtn whBtnGhost whBtnIcon" title="刷新">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 5v6h-6"/></svg>
+      </button>
+    </header>
+
+    <div class="whBody">
+      <nav class="whRail">
+        <button class="whRailBtn" title="知识库页面">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>
+          <span class="whRailTip">知识库页面</span>
+        </button>
+        <button class="whRailBtn" title="搜索">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+          <span class="whRailTip">搜索</span>
+        </button>
+        <button class="whRailBtn" title="图谱">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="17" cy="17" r="2.5"/><path d="M8.2 16.3 15.6 7.9M8.4 18.2l6.2-.8"/></svg>
+          <span class="whRailTip">图谱</span>
+        </button>
+        <button class="whRailBtn" title="资料">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 8h18v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M2 4h20v4H2z"/><path d="M10 12h4"/></svg>
+          <span class="whRailTip">资料</span>
+        </button>
+        <button class="whRailBtn" title="检查">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 11l3 3 8-8"/><path d="M21 12v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h11"/></svg>
+          <span class="whRailTip">检查</span>
+        </button>
+                <button class="whRailBtn" title="审阅">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5h13l3.5 7v5a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-5z"/></svg>
+          <span class="whRailTip">审阅</span>
+        </button>
+        <span class="whRailDivider"></span>
+        <button class="whRailBtn" title="运行日志">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 17l5-5-5-5"/><path d="M12 19h8"/></svg>
+          <span class="whRailTip">运行日志</span>
+        </button>
+        <button class="whRailBtn" aria-current="page" title="性能测试">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 15a8 8 0 1 1 16 0"/><path d="M12 15l4-4"/><circle cx="12" cy="15" r="1.4"/></svg>
+          <span class="whRailTip">性能测试</span>
+        </button>
+        <button class="whRailBtn" title="技能">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/></svg>
+          <span class="whRailTip">技能</span>
+        </button>
+        <button class="whRailBtn" title="概览">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-4v-6H9v6H5a1 1 0 0 1-1-1z"/></svg>
+          <span class="whRailTip">概览</span>
+        </button>
+        <span class="whRailSpacer"></span>
+        <button class="whRailBtn" title="设置">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a1.9 1.9 0 1 1-2.7 2.7l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a1.9 1.9 0 1 1-3.8 0v-.1a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a1.9 1.9 0 1 1-2.7-2.7l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a1.9 1.9 0 1 1 0-3.8h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a1.9 1.9 0 1 1 2.7-2.7l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a1.9 1.9 0 1 1 3.8 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a1.9 1.9 0 1 1 2.7 2.7l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a1.9 1.9 0 1 1 0 3.8h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>
+          <span class="whRailTip">设置</span>
+        </button>
+      </nav>
+
+      <div class="whSide">
+        <div class="whSideHead"><span>场景</span><span class="whToolbarSpacer"></span></div>
+        <div class="whSideBody">
+          <button class="perfItem" aria-current="true">
+            <span class="whDot" data-state="error" class="perfPulse"></span>
+            <span class="perfItemName">下单主流程</span>
+            <span class="perfItemMeta">录制中</span>
+          </button>
+          <button class="perfItem"><span class="whDot" data-state="saved"></span><span class="perfItemName">商品搜索</span><span class="perfItemMeta">PASS</span></button>
+          <button class="perfItem"><span class="whDot" data-state="error"></span><span class="perfItemName">购物车结算</span><span class="perfItemMeta">FAIL</span></button>
+          <button class="perfItem"><span class="whDot"></span><span class="perfItemName">登录鉴权</span><span class="perfItemMeta">未录</span></button>
+        </div>
+      </div>
+
+      <div class="whMain">
+        <div class="perfHead">
+          <span class="perfHeadTitle">下单主流程</span>
+          <span class="perfHeadPath">perf/下单主流程.md</span>
+          <span class="whToolbarSpacer"></span>
+          <span class="perfBadge" data-kind="fail"><span class="whDot perfPulse" data-state="error"></span>录制中</span>
+          <button class="whBtn">分段标注</button>
+          <button class="whBtn whBtnPrimary">停止录制</button>
+        </div>
+
+        <div class="whTabs" role="tablist">
+          <button class="whTab" role="tab" aria-selected="true"><span class="whTabStep">1</span>录制</button>
+          <button class="whTab" role="tab" aria-selected="false"><span class="whTabStep">2</span>脚本</button>
+          <button class="whTab" role="tab" aria-selected="false"><span class="whTabStep">3</span>运行</button>
+          <button class="whTab" role="tab" aria-selected="false"><span class="whTabStep">4</span>报告</button>
+        </div>
+
+        <div class="perfBody">
+          <div class="whBanner" style="margin:0">
+            <span>浏览器已打开。请在这个窗口里登录并走完整业务流程 —— 录制只记录它发出的请求，不记录页面渲染。</span>
+          </div>
+
+          <div class="whGrid">
+            <div class="whStat">
+              <div class="whStatLabel">已录制</div>
+              <div class="whStatValue">218 <small>条</small></div>
+              <div class="whStatNote">XHR/Fetch 204 · 文档 14</div>
+            </div>
+            <div class="whStat">
+              <div class="whStatLabel">已用时长</div>
+              <div class="whStatValue">04:12</div>
+              <div class="whStatNote">连续无空档</div>
+            </div>
+            <div class="whStat">
+              <div class="whStatLabel">主域</div>
+              <div class="whStatValue" style="font-size:14px;line-height:24px">test.example.com</div>
+              <div class="whStatNote">另有 2 个域，转换时过滤</div>
+            </div>
+            <div class="whStat">
+              <div class="whStatLabel">请求体</div>
+              <div class="whStatValue">32 <small>条</small></div>
+              <div class="whStatNote">最大 128 KB，超出截断</div>
+            </div>
+          </div>
+
+          <div class="perfDuo">
+            <div class="perfCard">
+              <div class="perfCardHead"><span>浏览器</span></div>
+              <div class="whField" style="display:flex;gap:8px;padding:3px 0"><span class="whMuted whSmall" style="width:64px">程序</span><span>Microsoft Edge · 独立临时 profile</span></div>
+              <div class="whField" style="display:flex;gap:8px;padding:3px 0"><span class="whMuted whSmall" style="width:64px">调试端口</span><span style="font-variant-numeric:tabular-nums">9321</span></div>
+              <div class="whField" style="display:flex;gap:8px;padding:3px 0"><span class="whMuted whSmall" style="width:64px">凭据脱敏</span><span>已开启 · Authorization / Cookie 写为 &lt;redacted&gt;</span></div>
+              <div class="whField" style="display:flex;gap:8px;padding:3px 0"><span class="whMuted whSmall" style="width:64px">保留期</span><span>7 天后自动清理</span></div>
+            </div>
+            <div class="perfCard">
+              <div class="perfCardHead"><span>分段标注</span><span class="whToolbarSpacer"></span><span class="whSmall whMuted">对应事务</span></div>
+              <div class="whLogRow" style="padding-left:0">
+                <span class="whLogTime">00:38</span><span class="whLogMsg">登录</span>
+              </div>
+              <div class="whLogRow" style="padding-left:0">
+                <span class="whLogTime">01:52</span><span class="whLogMsg">查询商品</span>
+              </div>
+              <div class="whLogRow" style="padding-left:0">
+                <span class="whLogTime">03:30</span><span class="whLogMsg">提交订单 · 未结束</span>
+              </div>
+              <div class="whSmall whMuted" style="margin-top:6px">标注只在转换时把连续请求切成 group，不影响录制本身。</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2><span class="n">03</span>脚本段 · TODO 确认（主区局部）</h2>
+  <div class="cap">
+    转换后必须先过这一关。<b>红色的那条会阻止进入下一步</b>（签名头无法自动再生），另外两条给建议绑定，人点一下确认即可。
+  </div>
+
+  <div class="demo-root auto dsh-wikihub-root">
+    <div class="whMain">
+      <div class="perfHead">
+        <span class="perfHeadTitle">脚本 · 下单主流程</span>
+        <span class="perfBadge" data-kind="warn">3 项待确认</span>
+        <span class="whToolbarSpacer"></span>
+        <button class="whBtn">查看脚本</button>
+        <button class="whBtn whBtnPrimary" disabled>下一步：冒烟</button>
+      </div>
+      <div class="whTabs" role="tablist">
+        <button class="whTab" role="tab" aria-selected="false" data-done="true"><span class="whTabStep">✓</span>录制</button>
+        <button class="whTab" role="tab" aria-selected="true"><span class="whTabStep">2</span>脚本</button>
+        <button class="whTab" role="tab" aria-selected="false"><span class="whTabStep">3</span>运行</button>
+        <button class="whTab" role="tab" aria-selected="false"><span class="whTabStep">4</span>报告</button>
+      </div>
+
+      <div class="perfBody">
+        <div class="perfEnvRow">
+          <span>218 条 → 过滤后 46 条 → 去重后 31 个请求</span>
+          <span class="whToolbarSpacer"></span>
+          <span>关联 3 项 · 断言 31 条</span>
+        </div>
+
+        <div class="whSection">
+          <div class="whSectionTitle"><span>TODO 清单</span><span class="whToolbarSpacer"></span><span class="whSmall whMuted">逐条确认后重新生成脚本</span></div>
+
+          <div class="perfTodo" data-kind="block">
+            <div class="perfTodoBody">
+              <div class="perfTodoTitle"><code>x-signature</code><span class="perfBadge" data-kind="fail">必须人工处理</span></div>
+              <div class="perfTodoHint">录制到的字面量无法重放：该头由前端按 timestamp + 密钥计算，插件不猜业务算法。需在脚本里用 k6 的 crypto 模块再生。</div>
+            </div>
+            <div class="perfTodoSide">
+              <div class="whSeg">
+                <button class="whSegBtn" aria-pressed="false">删除该请求</button>
+                <button class="whSegBtn" aria-pressed="true">我去改脚本</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="perfTodo">
+            <div class="perfTodoBody">
+              <div class="perfTodoTitle"><code>code</code><span class="perfBadge" data-kind="warn">一次性凭据</span></div>
+              <div class="perfTodoHint">短信验证码出现在登录请求体。建议指向测试环境的固定值，避免压测时被风控拦。</div>
+            </div>
+            <div class="perfTodoSide" style="flex-direction:row;align-items:center">
+              <div class="whSeg">
+                <button class="whSegBtn" aria-pressed="true">固定值</button>
+                <button class="whSegBtn" aria-pressed="false">环境变量</button>
+              </div>
+              <input class="whInput" style="width:104px;padding:3px 8px" value="123456">
+            </div>
+          </div>
+
+          <div class="perfTodo">
+            <div class="perfTodoBody">
+              <div class="perfTodoTitle"><code>{orderId}</code><span class="perfBadge">路径参数</span></div>
+              <div class="perfTodoHint">
+                建议绑定：出现在前序响应 <code>POST /api/order</code> 的 <code>data.orderId</code>
+                （已在第 14 条响应体里命中该字面量）。
+              </div>
+            </div>
+            <div class="perfTodoSide">
+              <div class="whSeg">
+                <button class="whSegBtn" aria-pressed="true">按建议绑定</button>
+                <button class="whSegBtn" aria-pressed="false">手动指定</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="whSection">
+          <div class="whSectionTitle"><span>关联清单</span></div>
+          <div class="perfCard" style="padding:4px 8px">
+            <table class="perfTable">
+              <thead>
+                <tr><th>来源</th><th>取值</th><th>注入到</th><th>方式</th></tr>
+              </thead>
+              <tbody>
+                <tr><td><code>POST /api/auth/login</code></td><td><code>data.token</code></td><td>全部请求</td><td>Authorization: Bearer</td></tr>
+                <tr><td><code>Set-Cookie: session</code></td><td>session</td><td>全部请求</td><td>Cookie jar</td></tr>
+                <tr><td><code>POST /api/order</code></td><td><code>data.orderId</code></td><td><code>GET /api/order/{orderId}</code></td><td>路径模板</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2><span class="n">04</span>报告段（主区局部）</h2>
+  <div class="cap">
+    报告正文用现有 <code>src/lib/markdown.js</code> 渲染，指标表与阈值判定是结构化块（不是把 md 拼出来再解析）。
+    <b>边界声明是强制章节</b>，且按本次实际情况自动填充。
+  </div>
+
+  <div class="demo-root dsh-wikihub-root main-only" style="height:820px">
+    <div class="whMain">
+      <div class="perfHead">
+        <span class="perfHeadTitle">报告 · 下单主流程</span>
+        <span class="perfBadge" data-kind="pass">PASS</span>
+        <span class="perfHeadPath">11-08 20:38 · 50VU · 5m</span>
+        <span class="whToolbarSpacer"></span>
+        <button class="whBtn">导出到库</button>
+        <button class="whBtn whBtnPrimary">再压一轮</button>
+      </div>
+      <div class="whTabs" role="tablist">
+        <button class="whTab" role="tab" aria-selected="false" data-done="true"><span class="whTabStep">✓</span>录制</button>
+        <button class="whTab" role="tab" aria-selected="false" data-done="true"><span class="whTabStep">✓</span>脚本</button>
+        <button class="whTab" role="tab" aria-selected="false" data-done="true"><span class="whTabStep">✓</span>运行</button>
+        <button class="whTab" role="tab" aria-selected="true"><span class="whTabStep">4</span>报告</button>
+      </div>
+
+      <div class="perfBody">
+        <div class="whSection">
+          <div class="whSectionTitle"><span>1 · 执行概览</span></div>
+          <div class="whGrid">
+            <div class="whStat"><div class="whStatLabel">结论</div><div class="whStatValue" style="color:#15803d">PASS</div><div class="whStatNote">2 项阈值全部达标</div></div>
+            <div class="whStat"><div class="whStatLabel">峰值 VU</div><div class="whStatValue">50</div><div class="whStatNote">1m→10 / 3m→50 / 1m→0</div></div>
+            <div class="whStat"><div class="whStatLabel">总请求</div><div class="whStatValue">41,982</div><div class="whStatNote">迭代 1,742 次</div></div>
+            <div class="whStat"><div class="whStatLabel">脚本指纹</div><div class="whStatValue" style="font-size:13px;line-height:26px;font-family:ui-monospace,Consolas,monospace">3f9a1c2</div><div class="whStatNote">11-08 20:12 生成</div></div>
+          </div>
+        </div>
+
+        <div class="whSection">
+          <div class="whSectionTitle"><span>2 · 阈值（SLA）判定</span></div>
+          <div class="perfCard" style="padding:4px 8px">
+            <table class="perfTable">
+              <thead><tr><th style="width:56%">表达式</th><th class="num" style="width:22%">实测</th><th style="width:22%">判定</th></tr></thead>
+              <tbody>
+                <tr><td><code>http_req_duration: p(95)&lt;500</code></td><td class="num">412 ms</td><td><span class="perfBadge" data-kind="pass">ok</span></td></tr>
+                <tr><td><code>http_req_failed: rate&lt;0.01</code></td><td class="num">0.42 %</td><td><span class="perfBadge" data-kind="pass">ok</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="whSection">
+          <div class="whSectionTitle"><span>3 · 事务明细</span><span class="whToolbarSpacer"></span><span class="whSmall whMuted">按 p95 降序</span></div>
+          <div class="perfCard" style="padding:4px 8px">
+            <table class="perfTable">
+              <thead>
+                <tr><th>事务 / 接口</th><th class="num">请求</th><th class="num">TPS</th><th class="num">p95</th><th class="num">失败率</th><th class="num">check</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>支付回调 <code>POST /api/pay/callback</code></td><td class="num">1,742</td><td class="num">5.8</td><td class="num" style="color:#ec1313">1,240 ms</td><td class="num">0.00 %</td><td class="num">100 %</td></tr>
+                <tr><td>提交订单 <code>POST /api/order</code></td><td class="num">1,742</td><td class="num">5.8</td><td class="num">486 ms</td><td class="num">0.11 %</td><td class="num">100 %</td></tr>
+                <tr><td>登录 <code>POST /api/auth/login</code></td><td class="num">1</td><td class="num">—</td><td class="num">312 ms</td><td class="num">0.00 %</td><td class="num">100 %</td></tr>
+                <tr><td>商品详情 <code>GET /api/sku/{id}</code></td><td class="num">8,710</td><td class="num">29.0</td><td class="num">268 ms</td><td class="num">0.31 %</td><td class="num">99.7 %</td></tr>
+                <tr><td>购物车 <code>GET /api/cart</code></td><td class="num">8,710</td><td class="num">29.0</td><td class="num">176 ms</td><td class="num">0.42 %</td><td class="num">100 %</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="whSection">
+          <div class="whSectionTitle"><span>4 · 冒烟对照</span></div>
+          <div class="perfCard" style="padding:10px 12px">
+            <div class="perfEnvRow" style="gap:22px">
+              <span>冒烟 p95 <b style="color:var(--dsw-alias-label-primary)">188 ms</b></span>
+              <span>本轮 p95 <b style="color:var(--dsw-alias-label-primary)">412 ms</b></span>
+              <span>劣化 <b style="color:var(--dsw-alias-state-warn-label)">+119%</b></span>
+              <span class="whSmall whMuted">加压后劣化 &gt; 50% 的接口：支付回调（+284%）</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="whSection">
+          <div class="whSectionTitle"><span>5 · 边界声明</span><span class="perfBadge">强制章节</span></div>
+          <div class="perfCard" style="padding:10px 12px;font-size:12px;line-height:19px;color:var(--dsw-alias-label-secondary)">
+            <div>· 指标为 k6 协议层实测，不含浏览器渲染；纯前端性能问题本报告不覆盖。</div>
+            <div>· 单机负载发生器，未测跨机分布式；压测机自身资源未采样，不能排除「压测机打满」。</div>
+            <div>· 本次优雅停止（REST 收尾），summary 完整；未检出 WebSocket / SSE 连接。</div>
+            <div>· 结论仅对「本次脚本 3f9a1c2 + 本次场景参数」有效；脚本改动后需重新压。</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2><span class="n">05</span>环境未就绪 · 空态与禁用</h2>
+  <div class="cap">
+    最常见的失败不是崩溃，而是<b>用户点了按钮什么也没发生</b>。所以环境检查放在最前面，缺什么就直说，并给出可复制的安装命令。
+  </div>
+
+  <div class="demo-root short dsh-wikihub-root">
+    <div class="whMain">
+      <div class="perfHead">
+        <span class="perfHeadTitle">下单主流程</span>
+        <span class="whToolbarSpacer"></span>
+        <button class="whBtn" disabled>开始录制</button>
+        <button class="whBtn whBtnPrimary" disabled>开始压测</button>
+      </div>
+      <div class="whBanner" data-kind="error" style="margin:10px 16px 0">
+        <span class="whDot" data-state="error"></span>
+        <span>没有找到 k6。压测需要本机有一个 k6 可执行文件。</span>
+        <span class="whBannerActions">
+          <button class="whBtn">重新检测</button>
+          <button class="whBtn whBtnPrimary">填写路径…</button>
+        </span>
+      </div>
+
+      <div class="perfBody">
+        <div class="whCenter" style="flex:none;width:100%;padding:22px 0 6px">
+          <div class="whCenterTitle">还差一步：装一个 k6</div>
+          <div class="whCenterHint whSmall">装好后点「重新检测」，或直接填写可执行文件路径。这里不会替你下载任何东西。</div>
+        </div>
+        <div class="perfCode">winget install k6 --source winget
+# 或手动安装后指定路径，例如 D:\k6\k6.exe</div>
+        <div class="perfEnvRow" style="margin-top:2px">
+          <span><span class="whDot" data-state="error"></span>k6 未找到</span>
+          <span><span class="whDot" data-state="saved"></span>Edge 已就绪 · 可录制</span>
+          <span class="whSmall whMuted">录制不依赖 k6；转换与执行才需要。</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2><span class="n">06</span>rail 入口特写（48px 内 11 项）</h2>
+  <div class="cap">
+    新增项放在「运行日志」之后，与知识类入口用一条 1px 分隔线隔开。激活态是 <b>3px 左侧竖条 + 品牌色 14% 底</b>，与现有 10 项完全一致。
+  </div>
+
+  <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
+    <div class="demo-root dsh-wikihub-root" style="width:72px;height:auto;padding:8px 0;border-radius:10px">
+      <nav class="whRail" style="border-right:none;gap:2px">
+        <button class="whRailBtn" title="知识库页面"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg></button>
+        <button class="whRailBtn" title="搜索"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg></button>
+        <button class="whRailBtn" title="图谱"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="17" cy="17" r="2.5"/><path d="M8.2 16.3 15.6 7.9M8.4 18.2l6.2-.8"/></svg></button>
+        <button class="whRailBtn" title="资料"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 8h18v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M2 4h20v4H2z"/><path d="M10 12h4"/></svg></button>
+        <button class="whRailBtn" title="检查"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 11l3 3 8-8"/><path d="M21 12v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h11"/></svg></button>
+        <button class="whRailBtn" title="审阅"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5h13l3.5 7v5a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-5z"/></svg></button>
+        <span class="whRailDivider"></span>
+        <button class="whRailBtn" title="运行日志"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 17l5-5-5-5"/><path d="M12 19h8"/></svg></button>
+        <button class="whRailBtn" aria-current="page" title="性能测试">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 15a8 8 0 1 1 16 0"/><path d="M12 15l4-4"/><circle cx="12" cy="15" r="1.4"/></svg>
+          <span class="whRailTip">性能测试</span>
+        </button>
+        <button class="whRailBtn" title="技能"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/></svg></button>
+        <button class="whRailBtn" title="概览"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-4v-6H9v6H5a1 1 0 0 1-1-1z"/></svg></button>
+        <span class="whRailSpacer"></span>
+        <button class="whRailBtn" title="设置"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a1.9 1.9 0 1 1-2.7 2.7l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a1.9 1.9 0 1 1-3.8 0v-.1a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a1.9 1.9 0 1 1-2.7-2.7l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a1.9 1.9 0 1 1 0-3.8h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a1.9 1.9 0 1 1 2.7-2.7l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a1.9 1.9 0 1 1 3.8 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a1.9 1.9 0 1 1 2.7 2.7l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a1.9 1.9 0 1 1 0 3.8h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg></button>
+      </nav>
+    </div>
+
+    <div style="flex:1;min-width:320px">
+      <div class="demo-root dsh-wikihub-root short" style="padding:14px 16px;height:auto;display:block">
+        <table class="perfTable">
+          <thead><tr><th>尺寸 / 规格</th><th>取值</th><th>来源</th></tr></thead>
+          <tbody>
+            <tr><td>rail 宽度</td><td><code>48px</code></td><td>现有 .whRail</td></tr>
+            <tr><td>图标按钮</td><td><code>36 × 36</code>，圆角 8</td><td>现有 .whRailBtn</td></tr>
+            <tr><td>图标</td><td><code>17px</code>，stroke 1.6，currentColor</td><td>Rail 现有尺寸</td></tr>
+            <tr><td>激活竖条</td><td><code>3 × 18</code>，右侧圆角 2，left −6</td><td>现有 ::before</td></tr>
+            <tr><td>tooltip</td><td>12px，出现延迟 120ms</td><td>现有 .whRailTip</td></tr>
+            <tr><td>新增图标</td><td>仪表盘（三段弧 + 指针），与既有 10 项同一网格</td><td>新增 IconGauge</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="note" style="margin-top:12px">
+        图标不用现成图标库：既有 10 个图标全是 <code>stroke</code> 描边、1.6px、24 网格手写的，
+        混进一个填充式图标会在 17px 下明显不同粗细。<code>IconGauge</code> 约 4 行 path。
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2><span class="n">07</span>与现有视图的关系（不放代码，只放边界）</h2>
+  <div class="cap">这张表是给实现和评审对齐用的：哪些是复用、哪些是新增、哪些是有意不做。</div>
+
+  <div class="demo-root dsh-wikihub-root short" style="padding:14px 16px;height:auto;display:block">
+    <table class="perfTable">
+      <thead><tr><th>对象</th><th>处理</th><th>理由</th></tr></thead>
+      <tbody>
+        <tr><td>工具栏（48px sticky）</td><td>完全不动</td><td>全屏只能有一个 <code>data-dsh-workbench-toolbar</code>，性能视图不能再造一条</td></tr>
+        <tr><td>rail</td><td>加 1 项 + 1 条分隔线</td><td>11 项仍在一屏内（11 × 38 ≈ 418px）</td></tr>
+        <tr><td>左栏</td><td>本视图换内容，宽度/折叠/拖拽行为不变</td><td>性能视图里目录树不是导航对象；但拖拽与自动折叠策略不改</td></tr>
+        <tr><td>阶段切换条</td><td>复用 .whTabs，仅加一个 16px 圆底数字/勾</td><td>四步是一条流水线，用 tab 表达进度比四张并列卡片清楚</td></tr>
+        <tr><td>指标卡</td><td>复用 .whGrid + .whStat</td><td>概览视图已经在用同一套，尺寸无需改</td></tr>
+        <tr><td>事件流</td><td>复用 .whLogRow 列宽（64 / 108 / 自适应）</td><td>和运行日志同一阅读节奏，用户不用重新学</td></tr>
+        <tr><td>图表</td><td>手写 SVG（VU 曲线 / 趋势线）+ CSS 宽度条</td><td>包体预算只剩约 91 KB，引图表库直接超</td></tr>
+        <tr><td>报告正文</td><td>复用 src/lib/markdown.js</td><td>不出现第二套 Markdown 渲染</td></tr>
+        <tr><td>深色主题</td><td>零额外代码</td><td>全部走 --dsw-alias-*，亮暗切换不需要分支</td></tr>
+        <tr><td>窄容器</td><td>perfDuo 在 &lt; 760px 叠成一栏</td><td>用 container query，不用 window media query（工作台宽度与窗口宽度无关）</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+</div>
+</body>
+</html>
