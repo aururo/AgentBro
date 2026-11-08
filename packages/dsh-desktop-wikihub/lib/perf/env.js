@@ -256,3 +256,70 @@ export async function verifyK6Path(candidate, deps = {}) {
     verifiedUpTo: VERIFIED_K6_VERSION,
   }
 }
+
+/**
+ * Run `k6 inspect <script>`: the static gate before a load test (spec P3 DoD).
+ *
+ * Lives here rather than in a new module because `env.js` is already one of the
+ * three files allowed to touch child_process (spec T7) and it owns the k6 path
+ * resolution.
+ *
+ * @param {string} file absolute path to the generated script
+ * @param {{ k6Path?: string, run?: (file: string, args: string[]) => Promise<{ code: number|null, stdout: string, stderr?: string }> }} [deps]
+ * @returns {Promise<{ ok: boolean, errors: string[], options: unknown }>}
+ */
+export async function inspectScript(file, deps = {}) {
+  const run = deps.run ?? spawnCapture
+  const k6Path = deps.k6Path ?? (await probeK6({ env: deps.env, platform: deps.platform, exists: deps.exists, run: deps.run })).path
+  if (k6Path === null || k6Path === undefined) return { ok: false, errors: ['k6 not found'], options: null }
+  const result = await run(k6Path, ['inspect', file])
+  const stdout = String(result?.stdout ?? '')
+  const stderr = String(result?.stderr ?? '')
+  if (result?.code !== 0) {
+    const message = (stderr || stdout || 'k6 inspect failed').split('\n').filter(Boolean).slice(-3).join(' / ')
+    return { ok: false, errors: [message], options: null }
+  }
+  try {
+    return { ok: true, errors: [], options: JSON.parse(stdout) }
+  } catch {
+    // k6 printed something we cannot parse: the script ran, but we will not claim
+    // we understood its structure.
+    return { ok: true, errors: [], options: null }
+  }
+}
+
+/**
+ * Like `spawnVersion` but keeps stderr, which is where k6 puts syntax errors.
+ * @param {string} file @param {string[]} args
+ */
+export function spawnCapture(file, args) {
+  return new Promise((resolve) => {
+    let stdout = ''
+    let stderr = ''
+    let child
+    try {
+      child = spawn(file, args, { windowsHide: true })
+    } catch {
+      resolve({ code: null, stdout: '', stderr: 'spawn failed' })
+      return
+    }
+    const timer = setTimeout(() => {
+      child.kill()
+      resolve({ code: null, stdout, stderr })
+    }, 15000)
+    child.stdout?.on('data', (chunk) => {
+      stdout += String(chunk)
+    })
+    child.stderr?.on('data', (chunk) => {
+      stderr += String(chunk)
+    })
+    child.on('error', (error) => {
+      clearTimeout(timer)
+      resolve({ code: null, stdout, stderr: String(error?.message ?? error) })
+    })
+    child.on('close', (code) => {
+      clearTimeout(timer)
+      resolve({ code, stdout, stderr })
+    })
+  })
+}

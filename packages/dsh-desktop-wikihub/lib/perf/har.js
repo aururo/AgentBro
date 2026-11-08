@@ -57,14 +57,60 @@ export function redactValue(value) {
 }
 
 /**
- * Replace the value of every sensitive header, keeping the name so the HAR still
- * records that the header existed (anti-correlation needs to know it was sent).
+ * Redact a sensitive header **while keeping its shape**.
+ *
+ * Replacing the whole value (`<redacted:len=23>`) looked safe but broke the next
+ * stage: the converter could no longer tell that the header was a Bearer token, so
+ * it emitted the placeholder as a literal and the generated script could never
+ * authenticate. Keeping the scheme (and the cookie names) preserves exactly the
+ * structure correlation needs and none of the secret.
+ *
+ * @param {string} name
+ * @param {string} value
+ */
+export function redactHeaderValue(name, value) {
+  const key = String(name).toLowerCase()
+  const text = String(value ?? '')
+  if (key === 'authorization') {
+    const match = /^([A-Za-z]+)\s+(.+)$/.exec(text)
+    return match === null ? redactValue(text) : `${match[1]} ${redactValue(match[2])}`
+  }
+  if (key === 'set-cookie') {
+    // Only the cookie itself is secret; Path/Domain/Expires/Max-Age/Secure/HttpOnly
+    // are attributes and must survive, or the header stops being readable.
+    const parts = text.split(';')
+    const first = parts[0] ?? ''
+    const eq = first.trim().indexOf('=')
+    const head = eq <= 0 ? first.trim() : `${first.trim().slice(0, eq)}=${redactValue(first.trim().slice(eq + 1))}`
+    return [head, ...parts.slice(1).map((part) => part.trim())].join('; ')
+  }
+  if (key === 'cookie') {
+    // Every pair here is a cookie value.
+    return text
+      .split(';')
+      .map((part) => {
+        const trimmed = part.trim()
+        const eq = trimmed.indexOf('=')
+        if (eq <= 0) return trimmed
+        return `${trimmed.slice(0, eq)}=${redactValue(trimmed.slice(eq + 1))}`
+      })
+      .join('; ')
+  }
+  return redactValue(text)
+}
+
+/**
+ * Replace the value of every sensitive header, keeping the name (and, for
+ * `authorization`/cookies, the scheme and the cookie names) so the HAR still
+ * records *that* the credential was sent.
  * @param {{ name: string, value: string }[]} headers
  * @param {boolean} enabled
  */
 export function redactHeaders(headers, enabled) {
   if (!enabled) return headers
-  return headers.map(({ name, value }) => (SENSITIVE_HEADERS.includes(String(name).toLowerCase()) ? { name, value: redactValue(value) } : { name, value }))
+  return headers.map(({ name, value }) =>
+    SENSITIVE_HEADERS.includes(String(name).toLowerCase()) ? { name, value: redactHeaderValue(name, value) } : { name, value },
+  )
 }
 
 /**

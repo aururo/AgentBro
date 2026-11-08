@@ -8,7 +8,7 @@
 import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
-import { recordDir, runDir, safeId, sitePerfDir } from './paths.js'
+import { recordDir, runDir, safeId, scriptDir, sitePerfDir } from './paths.js'
 
 /**
  * @param {{ root: string }} deps
@@ -149,6 +149,50 @@ export function createPerfStore({ root }) {
     return { removed, kept }
   }
 
+  /**
+   * Write a generated script plus its metadata (spec C3, C10.8).
+   * @param {string} siteId @param {string} slug @param {string} scriptId
+   * @param {{ source: string, meta: Record<string, unknown> }} payload
+   */
+  async function writeScript(siteId, slug, scriptId, payload) {
+    const dir = scriptDir(root, siteId, slug)
+    await mkdir(dir, { recursive: true })
+    const base = join(dir, safeId(scriptId))
+    await writeFile(base + '.js', payload.source, 'utf8')
+    await writeJsonAtomic(base + '.meta.json', payload.meta)
+    return { sourcePath: base + '.js', metaPath: base + '.meta.json' }
+  }
+
+  /** @param {string} siteId @param {string} slug @param {string} scriptId */
+  async function readScript(siteId, slug, scriptId) {
+    try {
+      const base = join(scriptDir(root, siteId, slug), safeId(scriptId))
+      return { source: await readFile(base + '.js', 'utf8'), meta: JSON.parse(await readFile(base + '.meta.json', 'utf8')) }
+    } catch {
+      return null
+    }
+  }
+
+  /**
+   * The "current script" pointer (spec C10.8). A mix page reads its members'
+   * current scripts, so this file is the contract, not a convenience.
+   * @param {string} siteId @param {string} slug
+   */
+  async function readCurrentScript(siteId, slug) {
+    try {
+      return JSON.parse(await readFile(join(scriptDir(root, siteId, slug), 'current.json'), 'utf8'))
+    } catch {
+      return null
+    }
+  }
+
+  /** @param {string} siteId @param {string} slug @param {{ scriptId: string, updatedAt: number }} pointer */
+  async function writeCurrentScript(siteId, slug, pointer) {
+    const dir = scriptDir(root, siteId, slug)
+    await mkdir(dir, { recursive: true })
+    await writeJsonAtomic(join(dir, 'current.json'), pointer)
+  }
+
   /** Absolute path of a record's HAR — for diagnostics only; the panel never reads bytes. */
   function harPathOf(siteId, recId) {
     return join(recordDir(root, siteId, recId), 'har.json')
@@ -164,6 +208,11 @@ export function createPerfStore({ root }) {
     readHar,
     removeRecord,
     listRecords,
+    writeScript,
+    readScript,
+    scriptPathOf: (siteId, slug, scriptId) => join(scriptDir(root, siteId, slug), safeId(scriptId) + '.js'),
+    readCurrentScript,
+    writeCurrentScript,
     sweep,
     harPathOf,
     runPathOf: (siteId, runId) => runDir(root, siteId, runId),

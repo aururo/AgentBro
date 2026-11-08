@@ -16,6 +16,7 @@ import {
   hostsOf,
   normalizeFilter,
   redactBody,
+  redactHeaderValue,
   redactHeaders,
   toHarEntry,
 } from '../lib/perf/har.js'
@@ -90,12 +91,14 @@ test('credentials are replaced, and the header name is kept', () => {
     { name: 'Content-Type', value: 'application/json' },
   ]
   const redacted = redactHeaders(headers, true)
-  assert.deepEqual(redacted[0], { name: 'Authorization', value: '<redacted:len=10>' })
-  assert.deepEqual(redacted[1], { name: 'cookie', value: '<redacted:len=5>' })
+  // The scheme and the cookie name survive: correlation needs them, the secret does not.
+  assert.deepEqual(redacted[0], { name: 'Authorization', value: 'Bearer <redacted:len=3>' })
+  assert.deepEqual(redacted[1], { name: 'cookie', value: 'sid=<redacted:len=1>' })
   assert.deepEqual(redacted[2], headers[2], 'non-sensitive headers stay readable')
   assert.deepEqual(redactHeaders(headers, false), headers, 'redaction is switchable')
 
   assert.equal(redactBody('{"username":"u","password":"hunter2"}'), '{"username":"u","password":"<redacted>"}')
+  assert.equal(redactHeaderValue('set-cookie', 'sid=abc; Path=/; HttpOnly'), 'sid=<redacted:len=3>; Path=/; HttpOnly')
   assert.equal(redactBody('{"data":{"token":"abc.def"}}'), '{"data":{"token":"<redacted>"}}')
   assert.equal(redactBody('Authorization: Bearer abc.def'), 'Authorization: Bearer <redacted>')
   assert.equal(redactBody('{"sku":1}'), '{"sku":1}', 'ordinary bodies are untouched')

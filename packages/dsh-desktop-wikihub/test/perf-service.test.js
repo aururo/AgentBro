@@ -6,6 +6,7 @@
 // Negative control used while authoring: removing the second validation pass
 // (the one that knows every scene's mode) makes the nested-mix case report valid.
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -337,5 +338,139 @@ test('options and provenance reach the recorder, and the sweep runs first', asyn
     assert.equal(call.filter.redact, false)
     assert.equal(call.filter.captureBodies, false)
     assert.equal(call.browser.kind, 'chrome', 'Chrome is preferred when both exist')
+  })
+})
+
+// --- conversion (spec C10.4, P3) ---------------------------------------------
+
+const FIXTURE_HAR = JSON.parse(readFileSync(new URL('./fixtures/perf/har-sample.json', import.meta.url), 'utf8'))
+
+/** Seed the artifact store with the fixture recording for one scene. */
+async function seedRecording(root, { recId = 'rec_seed', sceneId = 'perf/下单主流程' } = {}) {
+  const artifacts = createPerfStore({ root })
+  await artifacts.writeMeta('s', recId, {
+    recId,
+    site: 's',
+    sceneId,
+    startedAt: Date.now() - 5000,
+    stoppedAt: Date.now(),
+    baseUrl: FIXTURE_HAR.log.entries[0].request.url,
+    flowLabels: [],
+    stats: { entries: 7 },
+  })
+  await artifacts.writeHar('s', recId, FIXTURE_HAR)
+  return artifacts
+}
+
+/** The scene must carry a valid spec with a base URL. */
+function sceneStore() {
+  return fakeStore({
+    'perf/下单主流程': `\`\`\`yaml
+perf-spec:
+  version: 1
+  target: test
+  baseUrl: https://test.example.com
+  loadModel:
+    mode: stages
+    stages: [{ duration: 1m, target: 1 }]
+\`\`\`
+`,
+  })
+}
+
+test('conversion refuses a scene that has never been recorded', async () => {
+  await withRoot(async (root) => {
+    const perf = createPerf({ root, store: sceneStore(), probe: envWithBrowser, recorder: fakeRecorder() })
+    await assert.rejects(() => perf.convertScene({ siteId: 's', sceneId: 'perf/下单主流程' }), (error) => {
+      assert.equal(/** @type {any} */ (error).code, 'E_INVALID')
+      assert.match(String(/** @type {any} */ (error).message), /no recording/)
+      return true
+    })
+  })
+})
+
+test('conversion writes the script, its meta and the current pointer', async () => {
+  await withRoot(async (root) => {
+    const artifacts = await seedRecording(root)
+    const perf = createPerf({ root, store: sceneStore(), probe: envWithBrowser, recorder: fakeRecorder(), artifacts })
+    const result = await perf.convertScene({ siteId: 's', sceneId: 'perf/下单主流程' })
+
+    assert.match(result.scriptId, /^[0-9a-f]{7}$/)
+    assert.equal(result.stats.transactions, 1, 'the fixture carries no labels, so one transaction')
+    assert.equal(result.todos.some((todo) => todo.severity === 'block'), true)
+    assert.equal(result.preview.includes('generated') || result.preview.includes('生成'), true)
+
+    const current = await artifacts.readCurrentScript('s', '下单主流程')
+    assert.equal(current.scriptId, result.scriptId)
+    const stored = await artifacts.readScript('s', '下单主流程', result.scriptId)
+    assert.equal(stored.meta.recId, 'rec_seed')
+    assert.equal(stored.source.includes('export default function'), true)
+  })
+})
+
+test('confirming a TODO changes the script and keeps the previous decisions', async () => {
+  await withRoot(async (root) => {
+    const artifacts = await seedRecording(root)
+    const perf = createPerf({ root, store: sceneStore(), probe: envWithBrowser, recorder: fakeRecorder(), artifacts })
+    const first = await perf.convertScene({ siteId: 's', sceneId: 'perf/下单主流程' })
+    const todo = first.todos.find((entry) => entry.kind === 'path-param') ?? first.todos.find((entry) => entry.severity === 'block')
+
+    const confirmed = await perf.confirmScript({
+      siteId: 's',
+      sceneId: 'perf/下单主流程',
+      scriptId: first.scriptId,
+      resolutions: [{ key: todo.key, action: 'fixed' }],
+    })
+    assert.notEqual(confirmed.scriptId, first.scriptId, 'a different decision must not reuse the fingerprint')
+    assert.equal(confirmed.todos.some((entry) => entry.key === todo.key), false)
+
+    await assert.rejects(
+      () => perf.confirmScript({ siteId: 's', sceneId: 'perf/下单主流程', scriptId: first.scriptId, resolutions: [] }),
+      (error) => {
+        assert.equal(/** @type {any} */ (error).code, 'E_STALE', 'a stale fingerprint is a conflict, not a bad request')
+        return true
+      },
+    )
+  })
+})
+
+test('validation runs k6 inspect and reports blocking TODOs', async () => {
+  await withRoot(async (root) => {
+    const artifacts = await seedRecording(root)
+    const inspected = []
+    const perf = createPerf({
+      root,
+      store: sceneStore(),
+      recorder: fakeRecorder(),
+      artifacts,
+      probe: {
+        exists: () => true,
+        run: async (file, args) => {
+          inspected.push({ file, args })
+          // k6 version for probing, inspect output for validating.
+          if (args[0] === 'version') return { code: 0, stdout: 'k6 v2.2.0' }
+          return { code: 0, stdout: '{"vus":1,"duration":"30s"}' }
+        },
+      },
+    })
+
+    await assert.rejects(
+      () => perf.validateCurrentScript({ siteId: 's', sceneId: 'perf/下单主流程' }),
+      (error) => {
+        assert.equal(/** @type {any} */ (error).code, 'E_PERF_SCRIPT_INVALID')
+        return true
+      },
+    )
+
+    const generated = await perf.convertScene({ siteId: 's', sceneId: 'perf/下单主流程' })
+    const blocking = generated.todos.filter((todo) => todo.severity === 'block')
+    assert.equal(blocking.length > 0, true)
+
+    const result = await perf.validateCurrentScript({ siteId: 's', sceneId: 'perf/下单主流程' })
+    assert.equal(result.ok, false, 'blocking TODOs make the script not ready even when k6 accepts it')
+    assert.equal(result.blockingTodos.length, blocking.length)
+    assert.equal(inspected.some((call) => call.args[0] === 'inspect'), true)
+    // `file` is the k6 executable; the script is the first argument.
+    assert.equal(inspected.some((call) => String(call.args[1] ?? '').endsWith('.js')), true)
   })
 })

@@ -10,6 +10,9 @@ import { MAX_TOTAL_MS, MAX_VUS, checkSpec } from './spec.js'
 import { probeBrowser, probeK6, verifyK6Path } from './env.js'
 import { createRecorder } from './recorder.js'
 import { createPerfStore } from './store.js'
+import { convertHar } from './harToScript.js'
+import { createHash } from 'node:crypto'
+import { inspectScript } from './env.js'
 import { newRecordId } from './paths.js'
 
 /** Spec C3: recordings and runs older than this are swept lazily. */
@@ -212,6 +215,126 @@ export function createPerf({ root, store, probe = {}, artifacts: artifactsDep, r
     return { recId: recording.recId, labels: labels ?? [] }
   }
 
+  // --- conversion (spec C10.4, P3) ------------------------------------------
+
+  /** `perf/下单主流程` -> `下单主流程`; keeps script folders readable. */
+  function scriptSlugOf(sceneId) {
+    return String(sceneId).replace(/^perf\//, '').replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, '-').slice(0, 60) || 'scene'
+  }
+
+  /** Content hash, 7 hex chars: the script's identity (spec C3). */
+  function scriptIdOf(source) {
+    return createHash('sha256').update(source, 'utf8').digest('hex').slice(0, 7)
+  }
+
+  /** Latest record for a scene, or the one the caller named. */
+  async function resolveRecord(siteId, sceneId, recId) {
+    if (typeof recId === 'string' && recId !== '') {
+      const meta = await artifacts.readMeta(siteId, recId)
+      if (meta === null) throw new WikiError(CODE.NOT_FOUND, `unknown recording: ${recId}`)
+      return { recId, meta }
+    }
+    const rows = await artifacts.listRecords(siteId)
+    const hit = rows.find((row) => row.meta?.sceneId === sceneId)
+    if (hit === undefined) throw new WikiError(CODE.INVALID, 'this scene has no recording yet — record it first')
+    return { recId: hit.recId, meta: hit.meta }
+  }
+
+  /**
+   * HAR -> k6 script. The HAR is the input, so a re-run with different resolutions
+   * must produce a different `scriptId` — that is what invalidates a stale smoke.
+   *
+   * @param {{ siteId: string, sceneId: string, recId?: string, options?: any, resolutions?: any[] }} input
+   */
+  async function convertScene({ siteId, sceneId, recId, options = {}, resolutions = [] }) {
+    const scene = await requireRecordableScene(siteId, sceneId)
+    const record = await resolveRecord(siteId, sceneId, recId)
+    const har = await artifacts.readHar(siteId, record.recId)
+    if (har === null) throw new WikiError(CODE.NOT_FOUND, `recording ${record.recId} has no HAR on disk`)
+    const baseUrl = String(record.meta?.baseUrl ?? scene.baseUrl ?? '')
+    const result = convertHar({
+      har,
+      baseUrl,
+      labels: Array.isArray(record.meta?.flowLabels) ? record.meta.flowLabels : [],
+      options,
+      resolutions,
+    })
+    if (result.ok !== true) throw new WikiError(CODE.INVALID, `conversion failed: ${result.errors.join('; ')}`)
+
+    const scriptId = scriptIdOf(result.script)
+    const slug = scriptSlugOf(sceneId)
+    const meta = {
+      sceneId,
+      recId: record.recId,
+      scriptId,
+      generatedAt: Date.now(),
+      baseUrl,
+      stats: result.stats,
+      correlations: result.correlations,
+      todos: result.todos,
+      warnings: result.warnings,
+      options,
+      resolutions,
+    }
+    await artifacts.writeScript(siteId, slug, scriptId, { source: result.script, meta })
+    await artifacts.writeCurrentScript(siteId, slug, { scriptId, updatedAt: meta.generatedAt })
+    return {
+      scriptId,
+      recId: record.recId,
+      stats: result.stats,
+      correlations: result.correlations,
+      todos: result.todos,
+      warnings: result.warnings,
+      preview: previewOf(result.script),
+    }
+  }
+
+  /** Current script for a scene (spec C10.8 pointer semantics). */
+  async function getScript({ siteId, sceneId }) {
+    const slug = scriptSlugOf(sceneId)
+    const pointer = await artifacts.readCurrentScript(siteId, slug)
+    if (pointer === null) return { sceneId, scriptId: null, source: null, meta: null }
+    const stored = await artifacts.readScript(siteId, slug, pointer.scriptId)
+    if (stored === null) return { sceneId, scriptId: null, source: null, meta: null }
+    return { sceneId, scriptId: pointer.scriptId, source: stored.source, meta: stored.meta, preview: previewOf(stored.source) }
+  }
+
+  /**
+   * Apply the user's TODO decisions and regenerate. Resolutions are stored with
+   * the script so the panel can show what was decided.
+   */
+  async function confirmScript({ siteId, sceneId, scriptId, resolutions }) {
+    const current = await getScript({ siteId, sceneId })
+    if (current.scriptId === null) throw new WikiError(CODE.PERF_SCRIPT_INVALID, 'generate a script before confirming TODOs')
+    if (typeof scriptId === 'string' && scriptId !== '' && scriptId !== current.scriptId) {
+      throw new WikiError(CODE.STALE, `recording/script ${scriptId} is no longer current`)
+    }
+    const recId = current.meta?.recId
+    const options = current.meta?.options ?? {}
+    return convertScene({ siteId, sceneId, recId, options, resolutions: Array.isArray(resolutions) ? resolutions : [] })
+  }
+
+  /**
+   * `k6 inspect` the current script. Blocking TODOs are reported here rather than
+   * at run time, because a stale record id fails silently during a load run.
+   */
+  async function validateCurrentScript({ siteId, sceneId }) {
+    const slug = scriptSlugOf(sceneId)
+    const current = await getScript({ siteId, sceneId })
+    if (current.scriptId === null) throw new WikiError(CODE.PERF_SCRIPT_INVALID, 'generate a script before validating')
+    const k6 = await probeK6({ k6Path: (await readConfig(root))?.perf?.k6Path, ...probe })
+    if (k6.found !== true) throw new WikiError(CODE.PERF_NO_K6, 'k6 is required to validate a script')
+    const file = artifacts.scriptPathOf(siteId, slug, current.scriptId)
+    const inspected = await inspectScript(file, { k6Path: k6.path, run: probe.run })
+    const blocking = (current.meta?.todos ?? []).filter((todo) => todo.severity === 'block')
+    return {
+      ok: inspected.ok === true && blocking.length === 0,
+      errors: inspected.errors,
+      options: inspected.options,
+      blockingTodos: blocking,
+    }
+  }
+
   /** Host shutdown: never leave a browser or a half-written record behind. */
   async function dispose() {
     if (recorder.isRecording()) await recorder.abort().catch(() => {})
@@ -227,5 +350,19 @@ export function createPerf({ root, store, probe = {}, artifacts: artifactsDep, r
     addLabel,
     dispose,
     recordingStatus: () => recorder.status(),
+    convertScene,
+    getScript,
+    confirmScript,
+    validateCurrentScript,
   }
+}
+
+/**
+ * First 200 lines of a generated script: enough for the panel to show something
+ * real without shipping the whole file over the wire on every poll.
+ * @param {string} source
+ */
+function previewOf(source) {
+  const lines = String(source ?? '').split('\n')
+  return lines.slice(0, 200).join('\n') + (lines.length > 200 ? '\n…' : '')
 }

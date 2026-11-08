@@ -1,12 +1,20 @@
-# WikiHub 性能测试模块 · 实施规范 v1.8
+# WikiHub 性能测试模块 · 实施规范 v1.9
 
 > 依据：`docs/wikihub-perf-module-plan.md` v0.1（决策记录）+ 本规范的端到端审核
 > 审核方式：真机实测 k6 v2.2.0（`D:\k6\k6.exe`）+ 两个仓库源码核对（AgentBro / xgents-desktop）
 > 性质：**规范**（normative）。第 3–8 章是契约，实施与评审都以它为准；与方案稿冲突时以本文件为准。
 > 条款编号：**只追加、不复用**。被引用的条款号一经发布不再改号，新条款以小数序号插入（如 `C5.0`）。
-> 状态：**v1.8（2026-11-09，P0/P1/P2 已实施）**。三项产品决策已定（见 §12），可直接开工。
+> 状态：**v1.9（2026-11-09，P0–P3 已实施）**。三项产品决策已定（见 §12），可直接开工。
 
 ## 变更摘要
+
+### v1.9（P3 转换实施，三处链路修正）
+
+P3 用**真实录制的 HAR**（`test/fixtures/perf/har-sample.json`，login + 列表 + 数值路径 + 重复 POST + 第三方像素）做输入，生成的脚本用**真实 `k6 inspect`** 验证通过。三个问题都出在"阶段之间"：
+
+- **F-26**：P2 的脱敏把 `Authorization` 整个值替换成 `<redacted:len=N>`，**转换器因此看不出它是 Bearer**，生成的脚本把占位符当字面量发出去——永远登录不上。改为"保留结构、只抹秘密"：`Bearer <redacted:len=N>`、`sid=<redacted:len=N>; Path=/`。
+- **F-27**：登录请求体里的 `"password":"<redacted>"` 若原样保留，脚本同样登不进。改为渲染成 `${__ENV.PERF_PASSWORD}`——既不上盘明文，也给了明确的注入点。
+- **F-28**：`res.json('token')` 对 `{data:{token}}` 返回 null（xgents 的写法）。改为在响应 JSON 里走路径找 token，发出 `res.json('data.token')`，否则 setup 会静默给出 undefined 令牌，所有 check 失败且原因不可见。
 
 ### v1.8（P2 录制实施，三处实测修正）
 
@@ -131,6 +139,9 @@ C10.7 定义了混合场景怎么**跑**，但没定义它怎么**产出脚本**
 | F-21 | Windows 的版本横幅是 `k6.exe v2.2.0`，规范示例只写 `k6 v2.2.0`；按示例实现导致本机装了 k6 仍判"未找到" | C5.0 写明两种横幅都要接受；测试补真实 Windows 串 | C5.0 |
 | F-23 | CDP 事件顺序：ExtraInfo 先到且带完整头，`responseReceived` 后到且省略 set-cookie；无条件覆盖会丢掉登录 Cookie | 收到 ExtraInfo 后不再用 responseReceived 覆盖响应头；测试补"真实到达顺序"用例 | C10.6 |
 | F-24 | `Page.navigate` 返回时导航未提交，此时读目标 URL 得到 `about:blank` | pageUrl 改由 `Page.frameNavigated` 主帧事件更新，`getTargetInfo` 仅作兜底 | C4.1 |
+| F-26 | 脱敏抹掉了 Authorization 的方案标识，转换器无法识别 Bearer，脚本发出占位符 | 脱敏保留方案与 cookie 名（`Bearer <redacted:N>`、`sid=<redacted:N>`），只丢秘密 | §8、C10.6 |
+| F-27 | 登录体里的 `<redacted>` 会让脚本无法登录 | 渲染为 `${__ENV.PERF_<FIELD>}`，并在 TODO 里点名 | C10.6 |
+| F-28 | `res.json('token')` 在 `{data:{token}}` 上返回 null（照抄 xgents 的写法） | 走 JSON 路径找 token，产出 `res.json('data.token')` | C10.6 |
 | F-25 | Windows 上进程未退出时删 profile 失败且被吞，每次录制残留 GB 级目录 | 关闭后等待 `exited`（≤3s）+ 120ms 宽限再删；回滚与 abort 路径同样处理 | C10.5 |
 | F-22 | `PATH` 命中后若把裸名交给 spawn，面板会显示 `k6.exe`，无从判断来源 | 展开 `PATH` 为绝对路径候选（顺序仍 config→env→PATH→安装目录） | C5.0 |
 | F-20 | **实现 P0 时发现规范漏了一条外部事实**：`--new-machine-readable-summary` 的输出**不含 thresholds**，键名也从 `p(95)` 变成 `p95`。C7 原文只写了"顶层不同"，没说这两点，报告会显示"0 项被突破" | C7 补两条实测差异 + 第 3 章的降级文案；归一化层做键名改写与 `checks` 合成 | C7、§6.1 |
@@ -971,7 +982,7 @@ P1 结束时记录 `client.js` 字节数并与基线 725,697 求差；> 60,000 B
 | **P0 契约固化** | `fixtures/perf/*.json`（**已落库**）+ `har-sample.json`（待录）+ 旧版 k6 形状验证（能借到就做，借不到记录结论） | 四份 summary 能在 `summary.js` 里被正确判别（`shape` 为 `flat`/`new`/`flat`/`flat`）；`thresholds` 判定与 exit code 一致 |
 | **P1 骨架** ✅ | rail 第 11 项 + 分隔线、`Perf`/`PerfSide`、`/perf/env`（GET+POST）、`/perf/scenes`、spec 校验（已含 P0） | 已达成：k6 缺失时给出安装命令与手填入口、浏览器缺失才禁用录制；`client.js` 增量 **+13,777 B**（预算 60,000） |
 | **P2 录制** | `recorder.js`（移植）+ 状态轮询 + 脱敏 + 懒清理 | 真实流程走完，HAR 含登录 POST；`authorization` 已脱敏；`meta.browser.product` 有值；条数与 Top 主机正确 |
-| **P3 转换** | `harToScript.js` + TODO 确认 + `k6 inspect` | 生成脚本 `k6 inspect` 通过；阻断型 TODO 未解时 `/perf/run` 返回 `E_PERF_SCRIPT_INVALID` |
+| **P3 转换** ✅ | `harToScript.js` + TODO 确认 + `k6 inspect` | 已达成：真实 HAR → 4 事务（打开页面/登录/查询订单/提交订单）、登录进 `setup()` 且取 `data.token`、阻断型 TODO 2 项、真实 `k6 inspect` 通过；`confirmScript` 变更指纹后旧指纹返回 `E_STALE` |
 | **P4 执行** | `runner.js` + 冒烟门 + 实时指标 + 急停 + **mix 执行器与达成率检测** | 冒烟 1VU/30s 全绿；50VU 阶梯能看实时曲线；急停后 `status=stopped` 且**有** `summary.json` 与报告；3 场景 mix 跑完后每场景达成率 >= 95%，不足时判 `INVALID` |
 | **P5 报告** | `report.js` + 面板渲染 + 导出 | 报告数字与 `summary.json` 逐项相等；`thresholds` 布尔按 R2 取反后才判 PASS/FAIL；`99` 场景判 `FAIL` 且不报错 |
 | **P6 工具** | 6 个 `wikihub_perf_*` + 审批 + 技能说明 | 无 turn 时 `wikihub_perf_run` 本地 deny；有 turn 时弹审批；拒绝后 `state.json` 无新增 run |
@@ -1006,7 +1017,7 @@ P1 结束时记录 `client.js` 字节数并与基线 725,697 求差；> 60,000 B
 
 - [ ] **A1** 未装 k6 时面板禁用 + 安装命令，不出现"点了没反应"
 - [ ] **A2** 人控录制：按 C10.3 的时序（先挂事件再导航、起始页 about:blank），HAR 含登录 POST 与业务 XHR；`authorization` 已脱敏
-- [ ] **A3** 转换：登录进 `setup()`；TODO 含一次性凭据与路径参数；阻断项未解时无法进入运行
+- [x] **A3** 转换：登录进 `setup()`（`res.json('data.token')`）；TODO 含一次性凭据与路径参数；阻断项未解时 `validate` 返回 `ok:false`（实测：2 项阻断）
 - [ ] **A4** 冒烟全绿（无 TLS 错、check 全过），服务端拒绝无冒烟加压
 - [ ] **A5** 50 VU 阶梯压测：实时 TPS/p95/失败率/VU 每秒更新；急停后 `status=stopped`
 - [ ] **A6** 报告：7 章齐全；`thresholds` 判定与 exit code 一致；`99` 判 FAIL 但不报错；`103` 仍出报告
