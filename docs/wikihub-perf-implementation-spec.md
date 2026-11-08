@@ -1,12 +1,22 @@
-# WikiHub 性能测试模块 · 实施规范 v1.7
+# WikiHub 性能测试模块 · 实施规范 v1.8
 
 > 依据：`docs/wikihub-perf-module-plan.md` v0.1（决策记录）+ 本规范的端到端审核
 > 审核方式：真机实测 k6 v2.2.0（`D:\k6\k6.exe`）+ 两个仓库源码核对（AgentBro / xgents-desktop）
 > 性质：**规范**（normative）。第 3–8 章是契约，实施与评审都以它为准；与方案稿冲突时以本文件为准。
 > 条款编号：**只追加、不复用**。被引用的条款号一经发布不再改号，新条款以小数序号插入（如 `C5.0`）。
-> 状态：**v1.7（2026-11-09，P0/P1 已实施）**。三项产品决策已定（见 §12），可直接开工。
+> 状态：**v1.8（2026-11-09，P0/P1/P2 已实施）**。三项产品决策已定（见 §12），可直接开工。
 
 ## 变更摘要
+
+### v1.8（P2 录制实施，三处实测修正）
+
+P2 用**真实 Edge**跑通了端到端抓包（headless 仅用于冒烟，产品路径仍有头），期间抓到三个只有真机才会暴露的问题：
+
+- **F-23**：CDP 的 `responseReceivedExtraInfo` **先于** `responseReceived` 到达，而后者为安全省略 `set-cookie`。原实现无条件用后者覆盖头，**登录 Cookie 直接丢失**——下游关联全断。改为"收到 ExtraInfo 后不再用 responseReceived 覆盖头"。
+- **F-24**：`Page.navigate` 返回时导航**只是开始**，`Target.getTargetInfo` 仍报 `about:blank`。pageUrl 必须在 `Page.frameNavigated`（主帧）里更新，否则每条录制的元数据都写着 about:blank。
+- **F-25**：Windows 上浏览器进程未退出时删 profile 会失败，而 `rm` 的错误被吞 → **每次录制都留下一个 GB 级 profile**。改为关闭后等待 `exited`（≤3s）再删。
+
+实测证据（本机）：Document + Fetch 各 1 条；`authorization` → `<redacted:len=23>`；请求体 `password` → `<redacted>`；响应 `set-cookie` → `<redacted:len=15>`；`pageUrl` 正确；profile 已删除。测试 626/626。
 
 ### v1.7（P0/P1 实施，含两处实测修正）
 
@@ -119,6 +129,9 @@ C10.7 定义了混合场景怎么**跑**，但没定义它怎么**产出脚本**
 | F-15 | **录制用哪个浏览器没定义**：只写「Chrome/Edge + 独立 profile」。四件事悬空：两者都在时用谁、能否接管用户已开的浏览器、浏览器调试端口怎么取、profile 何时删（原文只在失败回滚里说"删"）。本机 Chrome 默认路径不存在、只有 Edge，这条不定就会导致"开发机能录、用户机器不能录" | 新增 C10.5：选择顺序 + 禁止 attach + 端口规则 + profile 生命周期；`meta.json` 增 `browser.product`/`profileKept` | C10.5、C4.1 |
 | F-16 | **采集范围没有契约**：只有 `captureBodies` 一个布尔，没说 Document / 静态资源 / WebSocket 收不收。直接决定"混合页面"能不能成立——页面导航若不被采集，脚本里就无法回放"打开页面"这一步 | 新增 C10.6：resourceType 默认表、排除规则、Document 的转换差异、第三方主机过滤与计数 | C10.6、C10 |
 | F-21 | Windows 的版本横幅是 `k6.exe v2.2.0`，规范示例只写 `k6 v2.2.0`；按示例实现导致本机装了 k6 仍判"未找到" | C5.0 写明两种横幅都要接受；测试补真实 Windows 串 | C5.0 |
+| F-23 | CDP 事件顺序：ExtraInfo 先到且带完整头，`responseReceived` 后到且省略 set-cookie；无条件覆盖会丢掉登录 Cookie | 收到 ExtraInfo 后不再用 responseReceived 覆盖响应头；测试补"真实到达顺序"用例 | C10.6 |
+| F-24 | `Page.navigate` 返回时导航未提交，此时读目标 URL 得到 `about:blank` | pageUrl 改由 `Page.frameNavigated` 主帧事件更新，`getTargetInfo` 仅作兜底 | C4.1 |
+| F-25 | Windows 上进程未退出时删 profile 失败且被吞，每次录制残留 GB 级目录 | 关闭后等待 `exited`（≤3s）+ 120ms 宽限再删；回滚与 abort 路径同样处理 | C10.5 |
 | F-22 | `PATH` 命中后若把裸名交给 spawn，面板会显示 `k6.exe`，无从判断来源 | 展开 `PATH` 为绝对路径候选（顺序仍 config→env→PATH→安装目录） | C5.0 |
 | F-20 | **实现 P0 时发现规范漏了一条外部事实**：`--new-machine-readable-summary` 的输出**不含 thresholds**，键名也从 `p(95)` 变成 `p95`。C7 原文只写了"顶层不同"，没说这两点，报告会显示"0 项被突破" | C7 补两条实测差异 + 第 3 章的降级文案；归一化层做键名改写与 `checks` 合成 | C7、§6.1 |
 | F-19 | **多场景怎么录没有链路**：C10.7 只定义怎么跑。在 mix 页点录制会被真去开浏览器（没有"禁止录制"的前置检查）；`POST /perf/script` 强制要 `recId`，而 mix 页没有；多份子脚本各带 `setup()`，k6 只允许一个，合并规则缺失 | 新增 C10.8（5 步工作流 + 7 条合并规则 + 当前脚本指针）+ C10.3 加禁止项 + 路由 `recId` 可选 + C10.4/C16 同步；加 T13/A15 | C10.8、C10.3、C10、C16 |

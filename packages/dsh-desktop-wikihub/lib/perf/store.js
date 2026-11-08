@@ -1,0 +1,185 @@
+// Perf artifact store: the only module that writes under `.llm-wiki/perf/`.
+//
+// Two rules that keep this simple and safe:
+//  1. paths come from `paths.js` (which rejects crafted ids), never from string
+//     concatenation at a call site
+//  2. `har.json` is written through a temp file + rename, so a crash mid-write
+//     cannot leave a half-parsed HAR that P3 would happily convert
+import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+
+import { recordDir, runDir, safeId, sitePerfDir } from './paths.js'
+
+/**
+ * @param {{ root: string }} deps
+ */
+export function createPerfStore({ root }) {
+  /** @param {string} siteId */
+  function siteDir(siteId) {
+    return sitePerfDir(root, siteId)
+  }
+
+  /** @param {string} siteId @param {string} recId */
+  async function ensureRecord(siteId, recId) {
+    const dir = recordDir(root, siteId, recId)
+    await mkdir(dir, { recursive: true })
+    return dir
+  }
+
+  /**
+   * @param {string} siteId
+   * @param {string} recId
+   * @param {Record<string, unknown>} meta
+   */
+  async function writeMeta(siteId, recId, meta) {
+    const dir = recordDir(root, siteId, recId)
+    await mkdir(dir, { recursive: true })
+    await writeJsonAtomic(join(dir, 'meta.json'), meta)
+    return join(dir, 'meta.json')
+  }
+
+  /** @param {string} siteId @param {string} recId */
+  async function readMeta(siteId, recId) {
+    try {
+      return JSON.parse(await readFile(join(recordDir(root, siteId, recId), 'meta.json'), 'utf8'))
+    } catch {
+      return null
+    }
+  }
+
+  /**
+   * Merge a patch into meta.json. Used by the label route, which must not race a
+   * full rewrite from the recorder.
+   * @param {string} siteId @param {string} recId @param {Record<string, unknown>} patch
+   */
+  async function patchMeta(siteId, recId, patch) {
+    const current = (await readMeta(siteId, recId)) ?? {}
+    const next = { ...current, ...patch }
+    await writeMeta(siteId, recId, next)
+    return next
+  }
+
+  /**
+   * @param {string} siteId @param {string} recId @param {unknown} har
+   */
+  async function writeHar(siteId, recId, har) {
+    const dir = recordDir(root, siteId, recId)
+    await mkdir(dir, { recursive: true })
+    const path = join(dir, 'har.json')
+    await writeJsonAtomic(path, har)
+    return path
+  }
+
+  /** @param {string} siteId @param {string} recId */
+  async function readHar(siteId, recId) {
+    try {
+      return JSON.parse(await readFile(join(recordDir(root, siteId, recId), 'har.json'), 'utf8'))
+    } catch {
+      return null
+    }
+  }
+
+  /**
+   * @param {string} siteId @param {string} recId
+   */
+  async function removeRecord(siteId, recId) {
+    await rm(recordDir(root, siteId, recId), { recursive: true, force: true })
+  }
+
+  /**
+   * Records on disk, newest first, joined with their meta when readable.
+   * @param {string} siteId
+   */
+  async function listRecords(siteId) {
+    const dir = join(siteDir(siteId), 'record')
+    let names = []
+    try {
+      names = await readdir(dir)
+    } catch {
+      return []
+    }
+    const rows = []
+    for (const name of names) {
+      try {
+        safeId(name)
+      } catch {
+        continue // not one of ours
+      }
+      const info = await stat(join(dir, name)).catch(() => null)
+      const meta = await readMeta(siteId, name)
+      rows.push({ recId: name, mtime: info?.mtimeMs ?? 0, meta })
+    }
+    return rows.sort((a, b) => b.mtime - a.mtime)
+  }
+
+  /**
+   * Lazy retention sweep (spec C3): drop record/run directories older than N days.
+   * Called before starting work rather than on a timer — the host may stay up for
+   * weeks, and a timer costs more than the sweep.
+   *
+   * @param {string} siteId
+   * @param {{ retentionDays?: number, now?: number }} [options]
+   * @returns {Promise<{ removed: number, kept: number }>}
+   */
+  async function sweep(siteId, options = {}) {
+    const days = Number(options.retentionDays ?? 7)
+    const cutoff = (Number(options.now) || Date.now()) - days * 24 * 3600 * 1000
+    let removed = 0
+    let kept = 0
+    for (const kind of ['record', 'run']) {
+      const dir = join(siteDir(siteId), kind)
+      let names = []
+      try {
+        names = await readdir(dir)
+      } catch {
+        continue
+      }
+      for (const name of names) {
+        const full = join(dir, name)
+        const info = await stat(full).catch(() => null)
+        if (info === null) continue
+        if (info.mtimeMs < cutoff) {
+          await rm(full, { recursive: true, force: true }).catch(() => {})
+          removed += 1
+        } else {
+          kept += 1
+        }
+      }
+    }
+    return { removed, kept }
+  }
+
+  /** Absolute path of a record's HAR — for diagnostics only; the panel never reads bytes. */
+  function harPathOf(siteId, recId) {
+    return join(recordDir(root, siteId, recId), 'har.json')
+  }
+
+  return {
+    siteDir,
+    ensureRecord,
+    writeMeta,
+    readMeta,
+    patchMeta,
+    writeHar,
+    readHar,
+    removeRecord,
+    listRecords,
+    sweep,
+    harPathOf,
+    runPathOf: (siteId, runId) => runDir(root, siteId, runId),
+  }
+}
+
+/**
+ * Write JSON through a temp file + rename so readers never see a partial file.
+ * Windows cannot rename over an existing file, so the old one is removed first —
+ * the window is tiny and only matters for a crash, where the temp file remains.
+ * @param {string} path
+ * @param {unknown} value
+ */
+async function writeJsonAtomic(path, value) {
+  const tmp = `${path}.tmp`
+  await writeFile(tmp, `${JSON.stringify(value, null, 2)}\n`, 'utf8')
+  await rm(path, { force: true }).catch(() => {})
+  await rename(tmp, path)
+}

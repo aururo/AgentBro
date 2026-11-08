@@ -12,6 +12,7 @@ import { join } from 'node:path'
 import test from 'node:test'
 
 import { createPerf } from '../lib/perf/service.js'
+import { createPerfStore } from '../lib/perf/store.js'
 
 const STAGES = `\`\`\`yaml
 perf-spec:
@@ -161,5 +162,180 @@ test('persisting a k6 path refuses a path that does not answer version', async (
         return true
       },
     )
+  })
+})
+
+// --- recording policy (spec C10.3 / C10.8 / C13) -----------------------------
+// The service owns the lock, the sweep and the scene checks; the recorder is a
+// double here so the assertions stay about policy, not about processes.
+
+function fakeRecorder({ active = null } = {}) {
+  const calls = []
+  let current = active
+  return {
+    calls,
+    isRecording: () => current !== null,
+    status: () => current,
+    async start(input) {
+      calls.push(input)
+      current = { active: true, recId: input.recId, entries: 0, settled: 0, elapsedMs: 0, topHosts: [], labels: [] }
+      return { recId: input.recId, browser: { kind: 'edge', port: 1 }, startedAt: 1 }
+    },
+    async stop() {
+      calls.push('stop')
+      current = null
+      return { recId: 'rec_x', entries: 3, durationMs: 10, topHosts: [], redacted: true, labels: [] }
+    },
+    label(text) {
+      calls.push(text)
+      return [{ at: 1, label: text }]
+    },
+    async abort() {
+      calls.push('abort')
+    },
+  }
+}
+
+const envWithBrowser = { exists: () => true, run: async () => ({ code: 0, stdout: 'k6 v2.2.0' }) }
+
+test('a mixed scene cannot be recorded', async () => {
+  await withRoot(async (root) => {
+    const store = fakeStore({ 'perf/A': STAGES, 'perf/B': STAGES, 'perf/混合': MIX(['perf/A', 'perf/B']) })
+    const perf = createPerf({ root, store, probe: envWithBrowser, recorder: fakeRecorder() })
+    await assert.rejects(
+      () => perf.startRecording({ siteId: 's', sceneId: 'perf/混合' }),
+      (error) => {
+        assert.equal(/** @type {any} */ (error).code, 'E_INVALID')
+        assert.match(String(/** @type {any} */ (error).message), /mixed scene has no own flow/)
+        return true
+      },
+    )
+  })
+})
+
+test('a scene without a start URL is refused before any process starts', async () => {
+  await withRoot(async (root) => {
+    const noUrl = `\`\`\`yaml
+perf-spec:
+  version: 1
+  target: test
+  loadModel:
+    mode: stages
+    stages: [{ duration: 1m, target: 1 }]
+\`\`\`
+`
+    const recorder = fakeRecorder()
+    const perf = createPerf({ root, store: fakeStore({ 'perf/no-url': noUrl }), probe: envWithBrowser, recorder })
+    await assert.rejects(
+      () => perf.startRecording({ siteId: 's', sceneId: 'perf/no-url' }),
+      (error) => {
+        assert.equal(/** @type {any} */ (error).code, 'E_INVALID')
+        assert.match(String(/** @type {any} */ (error).message), /no baseUrl/)
+        return true
+      },
+    )
+    assert.deepEqual(recorder.calls, [], 'nothing may be spawned for an unusable scene')
+  })
+})
+
+test('envRef supplies the start URL when baseUrl is absent', async () => {
+  await withRoot(async (root) => {
+    const scene = `\`\`\`yaml
+perf-spec:
+  version: 1
+  target: test
+  envRef: perf/环境-测试
+  loadModel:
+    mode: stages
+    stages: [{ duration: 1m, target: 1 }]
+\`\`\`
+`
+    const envPage = `\`\`\`yaml
+env-spec:
+  specVersion: 1
+  kind: environment
+  env: test
+  entry: https://test.example.com
+\`\`\`
+`
+    const recorder = fakeRecorder()
+    const perf = createPerf({ root, store: fakeStore({ 'perf/下单': scene, 'perf/环境-测试': envPage }), probe: envWithBrowser, recorder })
+    await perf.startRecording({ siteId: 's', sceneId: 'perf/下单' })
+    assert.equal(recorder.calls[0].baseUrl, 'https://test.example.com')
+  })
+})
+
+test('the second start is busy and reports what is running', async () => {
+  await withRoot(async (root) => {
+    const recorder = fakeRecorder({ active: { active: true, recId: 'rec_1', entries: 5 } })
+    const perf = createPerf({ root, store: fakeStore({ 'perf/A': STAGES }), probe: envWithBrowser, recorder })
+    await assert.rejects(
+      () => perf.startRecording({ siteId: 's', sceneId: 'perf/A' }),
+      (error) => {
+        const anyError = /** @type {any} */ (error)
+        assert.equal(anyError.code, 'E_PERF_BUSY')
+        assert.equal(anyError.details.current.recId, 'rec_1')
+        return true
+      },
+    )
+    assert.equal(recorder.calls.length, 0, 'the running recording must not be disturbed')
+  })
+})
+
+test('without a browser the start is refused with the environment code', async () => {
+  await withRoot(async (root) => {
+    const recorder = fakeRecorder()
+    const perf = createPerf({
+      root,
+      store: fakeStore({ 'perf/A': STAGES }),
+      probe: { exists: (p) => String(p).endsWith('k6.exe'), run: async () => ({ code: 0, stdout: 'k6 v2.2.0' }) },
+      recorder,
+    })
+    await assert.rejects(
+      () => perf.startRecording({ siteId: 's', sceneId: 'perf/A' }),
+      (error) => {
+        assert.equal(/** @type {any} */ (error).code, 'E_PERF_NO_BROWSER')
+        return true
+      },
+    )
+  })
+})
+
+test('stop and label refuse when idle', async () => {
+  await withRoot(async (root) => {
+    const perf = createPerf({ root, store: fakeStore({ 'perf/A': STAGES }), probe: envWithBrowser, recorder: fakeRecorder() })
+    await assert.rejects(() => perf.stopRecording(), (error) => /** @type {any} */ (error).code === 'E_PERF_RECORD_IDLE')
+    assert.throws(() => perf.addLabel('登录'), (error) => /** @type {any} */ (error).code === 'E_PERF_RECORD_IDLE')
+  })
+})
+
+test('options and provenance reach the recorder, and the sweep runs first', async () => {
+  await withRoot(async (root) => {
+    const swept = []
+    const artifacts = createPerfStore({ root })
+    const recorder = fakeRecorder()
+    const perf = createPerf({
+      root,
+      store: fakeStore({ 'perf/A': STAGES }),
+      probe: envWithBrowser,
+      recorder,
+      artifacts: { ...artifacts, sweep: async (siteId, options) => { swept.push({ siteId, options }); return artifacts.sweep(siteId, options) } },
+    })
+    await perf.startRecording({
+      siteId: 's',
+      sceneId: 'perf/A',
+      options: { redact: false, keepProfile: true, captureBodies: false },
+      startedBy: 'tool',
+      sessionId: 'sess-1',
+    })
+    assert.equal(swept.length, 1, 'retention is swept before work starts')
+    assert.equal(swept[0].options.retentionDays, 7)
+    const call = recorder.calls[0]
+    assert.equal(call.startedBy, 'tool')
+    assert.equal(call.sessionId, 'sess-1')
+    assert.equal(call.keepProfile, true)
+    assert.equal(call.filter.redact, false)
+    assert.equal(call.filter.captureBodies, false)
+    assert.equal(call.browser.kind, 'chrome', 'Chrome is preferred when both exist')
   })
 })
