@@ -15,6 +15,7 @@ import { createHash } from 'node:crypto'
 import { inspectScript } from './env.js'
 import { createRunner } from './runner.js'
 import { evaluateVerdict, normalizeSummary } from './summary.js'
+import { buildReport } from './report.js'
 import { newRunId } from './paths.js'
 import { newRecordId } from './paths.js'
 
@@ -489,6 +490,90 @@ export function createPerf({ root, store, probe = {}, artifacts: artifactsDep, r
       }))
   }
 
+  // --- report (spec §6.1) ---------------------------------------------------
+
+  /**
+   * Assemble the report for one run. Everything the report shows is read from
+   * disk: `state.json`, `summary.json`, `events.jsonl`, the script meta and the
+   * recording meta. Nothing is remembered in memory, so a report can be rebuilt
+   * for an old run after a host restart.
+   *
+   * @param {{ siteId: string, sceneId?: string, runId?: string }} input
+   */
+  async function reportForRun({ siteId, sceneId, runId }) {
+    const id = typeof runId === 'string' && runId !== '' ? runId : (await artifacts.listRuns(siteId))[0]?.runId
+    if (id === undefined || id === null) throw new WikiError(CODE.NOT_FOUND, 'no runs yet')
+    const state = await artifacts.readRunState(siteId, id)
+    if (state === null) throw new WikiError(CODE.NOT_FOUND, `unknown run: ${id}`)
+
+    const raw = await artifacts.readSummary(siteId, id)
+    const summary = raw === null ? normalizeSummary(undefined) : normalizeSummary(raw)
+    const events = await artifacts.readRunEvents(siteId, id)
+
+    const sceneIdResolved = String(sceneId ?? state.sceneId ?? '')
+    let scene = null
+    if (sceneIdResolved !== '') {
+      const doc = await store.read(siteId, sceneIdResolved).catch(() => null)
+      if (doc !== null) {
+        const checked = checkSpec(String(doc.body ?? ''))
+        scene = {
+          id: sceneIdResolved,
+          title: String(doc?.frontmatter?.title ?? sceneIdResolved),
+          target: typeof checked.spec?.target === 'string' ? checked.spec.target : null,
+        }
+      }
+    }
+
+    const scriptMeta = typeof state.scriptId === 'string'
+      ? (await artifacts.readScript(siteId, scriptSlugOf(sceneIdResolved), state.scriptId))?.meta ?? null
+      : null
+    const recordingMeta = typeof scriptMeta?.recId === 'string' ? await artifacts.readMeta(siteId, scriptMeta.recId) : null
+    const smoke = await previousSmoke(siteId, sceneIdResolved, String(state.scriptId ?? ''), id)
+
+    const report = buildReport({ state, summary, events, scene, scriptMeta, recordingMeta, smoke })
+    return { runId: id, sceneId: sceneIdResolved, ...report, state }
+  }
+
+  /**
+   * The smoke run this run should be compared against: same script fingerprint,
+   * mode `smoke`, not the run itself.
+   * @param {string} siteId @param {string} sceneId @param {string} scriptId @param {string} excludeRunId
+   */
+  async function previousSmoke(siteId, sceneId, scriptId, excludeRunId) {
+    const rows = await artifacts.listRuns(siteId)
+    for (const row of rows) {
+      const state = row.state
+      if (state === null || state === undefined) continue
+      if (row.runId === excludeRunId) continue
+      if (state.mode !== 'smoke' || state.sceneId !== sceneId || state.scriptId !== scriptId) continue
+      const raw = await artifacts.readSummary(siteId, row.runId)
+      if (raw === null) continue
+      return { runId: row.runId, summary: normalizeSummary(raw), state }
+    }
+    return null
+  }
+
+  /**
+   * Copy the report into the library so it can be reviewed and shared. The HAR
+   * never goes with it; the report contains numbers and decisions only.
+   * @param {{ siteId: string, sceneId?: string, runId?: string }} input
+   */
+  async function exportReport({ siteId, sceneId, runId }) {
+    const report = await reportForRun({ siteId, sceneId, runId })
+    const slug = scriptSlugOf(report.sceneId === '' ? 'perf/report' : report.sceneId)
+    const id = `perf/报告-${slug}-${report.runId}.md`
+    const frontmatter = {
+      title: `性能报告 · ${slug} · ${report.runId}`,
+      type: 'perf-report',
+      runId: report.runId,
+      sceneId: report.sceneId,
+      verdict: report.verdict,
+      generatedAt: new Date().toISOString(),
+    }
+    const doc = await store.write(siteId, id, { frontmatter, body: report.markdown })
+    return { path: id, mtime: doc?.mtime ?? null, verdict: report.verdict }
+  }
+
   /** Host shutdown: never leave a browser or a half-written record behind. */
   async function dispose() {
     if (recorder.isRecording()) await recorder.abort().catch(() => {})
@@ -513,6 +598,8 @@ export function createPerf({ root, store, probe = {}, artifacts: artifactsDep, r
     runStatus,
     listSceneRuns,
     latestSmokeVerdict,
+    reportForRun,
+    exportReport,
   }
 }
 

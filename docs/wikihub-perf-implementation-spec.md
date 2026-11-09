@@ -1,12 +1,18 @@
-# WikiHub 性能测试模块 · 实施规范 v2.0
+# WikiHub 性能测试模块 · 实施规范 v2.1
 
 > 依据：`docs/wikihub-perf-module-plan.md` v0.1（决策记录）+ 本规范的端到端审核
 > 审核方式：真机实测 k6 v2.2.0（`D:\k6\k6.exe`）+ 两个仓库源码核对（AgentBro / xgents-desktop）
 > 性质：**规范**（normative）。第 3–8 章是契约，实施与评审都以它为准；与方案稿冲突时以本文件为准。
 > 条款编号：**只追加、不复用**。被引用的条款号一经发布不再改号，新条款以小数序号插入（如 `C5.0`）。
-> 状态：**v2.0（2026-11-09，P0–P4 已实施）**。三项产品决策已定（见 §12），可直接开工。
+> 状态：**v2.1（2026-11-09，P0–P5 已实施）**。三项产品决策已定（见 §12），可直接开工。
 
 ## 变更摘要
+
+### v2.1（P5 报告实施）
+
+`lib/perf/report.js`（7 章纯函数）+ 服务层 `reportForRun` / `exportReport` + 路由 + 面板报告段（复用既有 Markdown 渲染器）。真机验证：报告里的总请求 80、TPS 19.68、p95 2.33 ms 与 `summary.json` 逐项相等。
+
+- **F-31**：运行尚未结束时报告会给出 PASS——读取 `state.json` 时正处在 `finalize()` 落盘窗口，summary 已写、状态还是 running。改为**运行中一律 `INVALID`**（"本报告只是当前快照"），否则报告会在下一个请求里自我矛盾。
 
 ### v2.0（P4 执行实施；体积限制取消）
 
@@ -152,6 +158,7 @@ C10.7 定义了混合场景怎么**跑**，但没定义它怎么**产出脚本**
 | F-28 | `res.json('token')` 在 `{data:{token}}` 上返回 null（照抄 xgents 的写法） | 走 JSON 路径找 token，产出 `res.json('data.token')` | C10.6 |
 | F-29 | 停止后仍显示「运行中」：`stop()` 没等 `finalize()` 写完状态 | 记录 `session.finalized`，停止路径 await 它 | C8 |
 | F-30 | 停止路径回报失真：REST 超时改为 kill 也报 `via:'rest'` | `via` 反映实际路径（rest / signal） | C8 |
+| F-31 | 运行中的 run 也能出 PASS 报告（summary 已写、state 仍 running） | 运行中一律 `INVALID`，并注明"只是当前快照" | §6.1 |
 | F-25 | Windows 上进程未退出时删 profile 失败且被吞，每次录制残留 GB 级目录 | 关闭后等待 `exited`（≤3s）+ 120ms 宽限再删；回滚与 abort 路径同样处理 | C10.5 |
 | F-22 | `PATH` 命中后若把裸名交给 spawn，面板会显示 `k6.exe`，无从判断来源 | 展开 `PATH` 为绝对路径候选（顺序仍 config→env→PATH→安装目录） | C5.0 |
 | F-20 | **实现 P0 时发现规范漏了一条外部事实**：`--new-machine-readable-summary` 的输出**不含 thresholds**，键名也从 `p(95)` 变成 `p95`。C7 原文只写了"顶层不同"，没说这两点，报告会显示"0 项被突破" | C7 补两条实测差异 + 第 3 章的降级文案；归一化层做键名改写与 `checks` 合成 | C7、§6.1 |
@@ -934,7 +941,7 @@ HTTP 与工具都调 `lib/perf/service.js`，不得各自实现规则。以下�
 
 | 值 | 条件 |
 |---|---|
-| `INVALID` | summary 形状不可识别（C7）；或 mix 模式任一场景达成率 < 0.95（C10.7）；或换场景跑完但脚本指纹与冒烟不一致（正常被门挡住，属兜底） |
+| `INVALID` | **运行尚未结束**（state 为 running/queued，指标还在变化）；summary 形状不可识别（C7）；或 mix 模式任一场景达成率 < 0.95（C10.7）；或换场景跑完但脚本指纹与冒烟不一致（正常被门挡住，属兜底） |
 | `FAIL` | 任一 `breached[expr]===true`（含每场景阈值）或 exit 99 |
 | `PASS` | 其余，且 exit ∈ {0} |
 | 不参与判定 | exit `103` / `105`（主动停止）；`INVALID` 时不判 PASS/FAIL——负载没打上去，判定没有意义 |
@@ -1025,7 +1032,7 @@ logs  perf  skills  overview            [spacer]            settings
 | **P2 录制** | `recorder.js`（移植）+ 状态轮询 + 脱敏 + 懒清理 | 真实流程走完，HAR 含登录 POST；`authorization` 已脱敏；`meta.browser.product` 有值；条数与 Top 主机正确 |
 | **P3 转换** ✅ | `harToScript.js` + TODO 确认 + `k6 inspect` | 已达成：真实 HAR → 4 事务（打开页面/登录/查询订单/提交订单）、登录进 `setup()` 且取 `data.token`、阻断型 TODO 2 项、真实 `k6 inspect` 通过；`confirmScript` 变更指纹后旧指纹返回 `E_STALE` |
 | **P4 执行（单场景）** ✅ | `runner.js` + 冒烟门 + 实时指标 + 急停 | 已达成：真机冒烟 PASS（p95 5.77ms / 0% 失败）；加压实时采样 TPS/p95/VU 每秒刷新；REST 急停 exit 103、summary 仍写出、状态 `stopped`。**mix 执行器与达成率检测尚未实现**（等 C10.8 合并脚本），是 P5 的前置 |
-| **P5 报告** | `report.js` + 面板渲染 + 导出 | 报告数字与 `summary.json` 逐项相等；`thresholds` 布尔按 R2 取反后才判 PASS/FAIL；`99` 场景判 `FAIL` 且不报错 |
+| **P5 报告** ✅ | `report.js` + 面板渲染 + 导出 | 已达成：7 章齐全；数字与 summary 逐项相等（真机 80 请求 / 19.68 TPS / 2.33ms 三项核对通过）；`thresholds` 按 R2 语义判定；`99` 判 FAIL；`103` 仍出报告；**运行中判 INVALID**；导出写入 `perf/报告-<场景>-<runId>.md` |
 | **P6 工具** | 6 个 `wikihub_perf_*` + 审批 + 技能说明 | 无 turn 时 `wikihub_perf_run` 本地 deny；有 turn 时弹审批；拒绝后 `state.json` 无新增 run |
 
 ---
@@ -1061,8 +1068,8 @@ logs  perf  skills  overview            [spacer]            settings
 - [x] **A3** 转换：登录进 `setup()`（`res.json('data.token')`）；TODO 含一次性凭据与路径参数；阻断项未解时 `validate` 返回 `ok:false`（实测：2 项阻断）
 - [x] **A4** 冒烟全绿（真机 30 请求 / 0% 失败）；服务端拒绝无冒烟加压（单测覆盖四种拒绝：无 script / 阻断 TODO / 无冒烟 / 冒烟未过）
 - [x] **A5** 实时 TPS/p95/失败率/VU 每秒更新（真机 4 VU 采样）；急停后 `status=stopped`、exit 103、summary 仍写出
-- [ ] **A6** 报告：7 章齐全；`thresholds` 判定与 exit code 一致；`99` 判 FAIL 但不报错；`103` 仍出报告
-- [ ] **A7** 数字一致性：报告里的 TPS/p95/失败率/总请求与 `summary.json` 逐项相等
+- [x] **A6** 报告：7 章齐全；`thresholds` 判定与 exit code 一致（含 exit 99 → FAIL、103 仍出报告）；运行中不出 PASS
+- [x] **A7** 数字一致性：真机核对三个数字（总请求 80、TPS 19.68、p95 2.33 ms）与 summary 相等
 - [ ] **A8** 单飞：录制中再点运行 → `E_PERF_BUSY`，UI 显示"已有录制在跑"
 - [ ] **A9** 构建：`npm run build` 通过（体积不设限，仅记录增量）
 - [ ] **A10** 工具：`wikihub_perf_run` 在无 turn 时 deny、有 turn 时弹审批、拒绝后无副作用

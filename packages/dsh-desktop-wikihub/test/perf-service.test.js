@@ -637,3 +637,58 @@ perf-spec:
     })
   })
 })
+
+// --- report (spec §6.1, P5) --------------------------------------------------
+
+/** Store double that also records writes, so export can be asserted. */
+function writableStore(bodies) {
+  const base = fakeStore(bodies)
+  const writes = []
+  return {
+    ...base,
+    writes,
+    write: async (siteId, id, input) => {
+      writes.push({ siteId, id, input })
+      return { mtime: 1234 }
+    },
+  }
+}
+
+test('a report can be built for a completed run and states its verdict', async () => {
+  await withRoot(async (root) => {
+    const artifacts = await seedSmoke(root, { scriptId: 'abc1234' })
+    const perf = createPerf({ root, store: sceneStore(), probe: envWithBrowser, recorder: fakeRecorder(), artifacts, runner: fakeRunner() })
+    const report = await perf.reportForRun({ siteId: 's', sceneId: 'perf/下单主流程', runId: 'r_smoke' })
+    assert.equal(report.verdict, 'PASS')
+    assert.match(report.markdown, /结论：PASS/)
+    assert.match(report.markdown, /16010/, 'the request count comes straight from the fixture summary')
+    assert.equal(report.chapters.boundary.includes('单机'), true)
+  })
+})
+
+test('an unknown run is a 404, not an empty report', async () => {
+  await withRoot(async (root) => {
+    const perf = createPerf({ root, store: sceneStore(), probe: envWithBrowser, recorder: fakeRecorder(), runner: fakeRunner() })
+    await assert.rejects(() => perf.reportForRun({ siteId: 's', sceneId: 'perf/下单主流程', runId: 'r_missing' }), (error) => {
+      assert.equal(/** @type {any} */ (error).code, 'E_NOT_FOUND')
+      return true
+    })
+  })
+})
+
+test('export writes the report as a library page under perf/', async () => {
+  await withRoot(async (root) => {
+    const artifacts = await seedSmoke(root, { scriptId: 'abc1234' })
+    const store = writableStore({ 'perf/下单主流程': STAGES })
+    const perf = createPerf({ root, store, probe: envWithBrowser, recorder: fakeRecorder(), artifacts, runner: fakeRunner() })
+    const exported = await perf.exportReport({ siteId: 's', sceneId: 'perf/下单主流程', runId: 'r_smoke' })
+    assert.match(exported.path, /^perf\/报告-下单主流程-r_smoke\.md$/)
+    assert.equal(store.writes.length, 1)
+    const written = store.writes[0]
+    assert.equal(written.input.frontmatter.type, 'perf-report')
+    assert.equal(written.input.frontmatter.verdict, 'PASS')
+    assert.match(written.input.body, /## 3. 阈值判定/)
+    // The HAR is never part of the export.
+    assert.equal(written.input.body.includes('<redacted'), false)
+  })
+})
