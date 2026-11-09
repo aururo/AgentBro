@@ -340,7 +340,7 @@ export function Perf({ site, active, env, scene, selectedId, loading, error, onS
           ),
     )
   } else if (stage === 'script') {
-    body = h(PerfScript, { site, sceneId: selectedId, active, t })
+    body = h(PerfScript, { site, sceneId: selectedId, scene, active, t })
   } else if (stage === 'run') {
     body = h(PerfRun, { site, sceneId: selectedId, scene, active, t })
   } else if (stage === 'report') {

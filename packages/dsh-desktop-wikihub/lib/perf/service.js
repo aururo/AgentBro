@@ -16,6 +16,7 @@ import { inspectScript } from './env.js'
 import { createRunner } from './runner.js'
 import { evaluateVerdict, normalizeSummary } from './summary.js'
 import { buildReport } from './report.js'
+import { deliveryOf, mergeMixScript } from './merge.js'
 import { newRunId } from './paths.js'
 import { newRecordId } from './paths.js'
 
@@ -142,7 +143,7 @@ export function createPerf({ root, store, probe = {}, artifacts: artifactsDep, r
     if (mode === 'mix') throw new WikiError(CODE.INVALID, 'mixed scene has no own flow — record its members instead')
     const baseUrl = await resolveStartUrl(siteId, checked.spec)
     if (baseUrl === null) throw new WikiError(CODE.INVALID, 'scene has no baseUrl (set baseUrl or envRef)')
-    return { sceneId: id, spec: checked.spec, baseUrl }
+    return { sceneId: id, title: String(doc?.frontmatter?.title ?? id), spec: checked.spec, baseUrl }
   }
 
   /**
@@ -262,6 +263,12 @@ export function createPerf({ root, store, probe = {}, artifacts: artifactsDep, r
    * @param {{ siteId: string, sceneId: string, recId?: string, options?: any, resolutions?: any[] }} input
    */
   async function convertScene({ siteId, sceneId, recId, options = {}, resolutions = [] }) {
+    // A mix page has no recording of its own: its script is the merge of its
+    // members (spec C10.8).
+    const mixDoc = await store.read(siteId, sceneId).catch(() => null)
+    if (mixDoc !== null && String(checkSpec(String(mixDoc.body ?? '')).spec?.loadModel?.mode ?? '') === 'mix') {
+      return convertMixScene({ siteId, sceneId, options })
+    }
     const scene = await requireRecordableScene(siteId, sceneId)
     const record = await resolveRecord(siteId, sceneId, recId)
     const har = await artifacts.readHar(siteId, record.recId)
@@ -280,6 +287,8 @@ export function createPerf({ root, store, probe = {}, artifacts: artifactsDep, r
     const slug = scriptSlugOf(sceneId)
     const meta = {
       sceneId,
+      sceneTitle: scene.title ?? sceneId,
+      model: result.model,
       recId: record.recId,
       scriptId,
       generatedAt: Date.now(),
@@ -302,6 +311,110 @@ export function createPerf({ root, store, probe = {}, artifacts: artifactsDep, r
       warnings: result.warnings,
       preview: previewOf(result.script),
     }
+  }
+
+  /**
+   * Mixed-scenario conversion (spec C10.8): read each member's current script model,
+   * merge, and publish the result as this page's script.
+   *
+   * Refuses while a member still has a blocking TODO — a merged script that cannot
+   * replay one member is worse than no script, because the run would look green.
+   *
+   * @param {{ siteId: string, sceneId: string, options?: any }} input
+   */
+  async function convertMixScene({ siteId, sceneId, options = {} }) {
+    const doc = await store.read(siteId, sceneId).catch(() => null)
+    if (doc === null) throw new WikiError(CODE.NOT_FOUND, `unknown scene: ${sceneId}`)
+    const checked = checkSpec(String(doc.body ?? ''))
+    if (checked.ok !== true) throw new WikiError(CODE.INVALID, `scene spec is invalid: ${checked.errors.join('; ')}`)
+    const load = checked.spec?.loadModel ?? {}
+    const items = Array.isArray(load.mix) ? load.mix : []
+    if (items.length < 2) throw new WikiError(CODE.INVALID, 'mix needs 2..6 entries')
+
+    const members = []
+    const blocking = []
+    for (const [index, item] of items.entries()) {
+      const memberId = String(item?.sceneRef ?? '').trim()
+      const memberScript = await getScript({ siteId, sceneId: memberId })
+      if (memberScript.scriptId === null || memberScript.meta?.model === undefined) {
+        throw new WikiError(CODE.PERF_SCRIPT_INVALID, `member ${memberId} has no generated script yet`)
+      }
+      const memberBlocking = (memberScript.meta?.todos ?? []).filter((todo) => todo.severity === 'block')
+      if (memberBlocking.length > 0) blocking.push({ sceneId: memberId, count: memberBlocking.length })
+      members.push({
+        n: index + 1,
+        sceneId: memberId,
+        label: String(memberScript.meta?.sceneTitle ?? memberId.replace(/^perf\//, '')),
+        model: memberScript.meta.model,
+        scriptId: memberScript.scriptId,
+      })
+    }
+    if (blocking.length > 0) {
+      throw new WikiError(CODE.PERF_SCRIPT_INVALID, 'a member still has blocking TODOs', { blocking })
+    }
+
+    // The iteration duration for VU sizing comes from this scene's previous smoke,
+    // if any; otherwise the merge falls back to a placeholder and says so.
+    const previous = await latestMixSmokeIteration(siteId, sceneId)
+    const merged = mergeMixScript({
+      members,
+      items: items.map((item) => ({ sceneRef: String(item?.sceneRef ?? ''), weight: Number(item?.weight) })),
+      iterationsPerSec: Number(load.iterationsPerSec),
+      ramp: load.ramp ?? null,
+      duration: typeof load.duration === 'string' ? load.duration : '5m',
+      maxVus: Number(load.maxVus ?? 0),
+      p95IterMs: previous,
+    })
+    if (merged.errors.length > 0) throw new WikiError(CODE.PERF_SCRIPT_INVALID, merged.errors.join('; '))
+
+    const scriptId = scriptIdOf(merged.script)
+    const slug = scriptSlugOf(sceneId)
+    const meta = {
+      sceneId,
+      sceneTitle: String(doc?.frontmatter?.title ?? sceneId),
+      recId: null,
+      scriptId,
+      mixed: true,
+      generatedAt: Date.now(),
+      baseUrl: null,
+      stats: { transactions: merged.mixMap.length, requests: 0 },
+      correlations: [],
+      todos: [],
+      warnings: merged.warnings,
+      options,
+      resolutions: [],
+      mixMap: merged.mixMap,
+      members: merged.mixMap.map((row) => ({ n: row.n, sceneId: row.sceneId, scriptId: row.scriptId, weight: row.weight, rate: row.rate })),
+      model: null,
+    }
+    await artifacts.writeScript(siteId, slug, scriptId, { source: merged.script, meta })
+    await artifacts.writeCurrentScript(siteId, slug, { scriptId, updatedAt: meta.generatedAt })
+    return {
+      scriptId,
+      mixed: true,
+      members: meta.members,
+      mixMap: merged.mixMap,
+      stats: meta.stats,
+      correlations: [],
+      todos: [],
+      warnings: merged.warnings,
+      preview: previewOf(merged.script),
+    }
+  }
+
+  /** Median iteration duration of this scene's last finished smoke, in ms. */
+  async function latestMixSmokeIteration(siteId, sceneId) {
+    const rows = await artifacts.listRuns(siteId)
+    for (const row of rows) {
+      const state = row.state
+      if (state === null || state === undefined) continue
+      if (state.mode !== 'smoke' || state.sceneId !== sceneId || state.status !== 'finished') continue
+      const raw = await artifacts.readSummary(siteId, row.runId)
+      const summary = normalizeSummary(raw)
+      const p95 = summary.metrics?.iteration_duration?.stats?.['p(95)']
+      if (typeof p95 === 'number' && p95 > 0) return p95
+    }
+    return null
   }
 
   /** Current script for a scene (spec C10.8 pointer semantics). */
@@ -384,6 +497,15 @@ export function createPerf({ root, store, probe = {}, artifacts: artifactsDep, r
     if (runner.isRunning()) {
       throw new WikiError(CODE.PERF_BUSY, 'a run is already in progress', { current: runner.status()?.runId })
     }
+    // A mix page has no recording of its own, so it goes through a different gate:
+    // the merged script must exist and every member must already be clean.
+    const doc = await store.read(siteId, sceneId).catch(() => null)
+    if (doc === null) throw new WikiError(CODE.NOT_FOUND, `unknown scene: ${sceneId}`)
+    const checkedDoc = checkSpec(String(doc.body ?? ''))
+    if (checkedDoc.ok !== true) throw new WikiError(CODE.INVALID, `scene spec is invalid: ${checkedDoc.errors.join('; ')}`)
+    if (String(checkedDoc.spec?.loadModel?.mode ?? '') === 'mix') {
+      return startMixRun({ siteId, sceneId, mode, startedBy, spec: checkedDoc.spec, title: String(doc?.frontmatter?.title ?? sceneId) })
+    }
     const scene = await requireRecordableScene(siteId, sceneId)
     const script = await getScript({ siteId, sceneId })
     if (script.scriptId === null) throw new WikiError(CODE.PERF_SCRIPT_INVALID, 'generate a script before running')
@@ -441,6 +563,65 @@ export function createPerf({ root, store, probe = {}, artifacts: artifactsDep, r
     return { runId, mode, scriptId: script.scriptId, ...started, startedBy }
   }
 
+  /**
+   * Run a merged (mixed) script. The script's `options.scenarios` drive the load;
+   * this only picks the environment knobs, so a smoke runs the same script at 2%
+   * of the rate for 15 s instead of needing a second script.
+   * @param {{ siteId: string, sceneId: string, mode: 'smoke'|'load', startedBy: string, spec: any, title: string }} input
+   */
+  async function startMixRun({ siteId, sceneId, mode, startedBy, spec, title }) {
+    const script = await getScript({ siteId, sceneId })
+    if (script.scriptId === null || script.meta?.mixed !== true) {
+      throw new WikiError(CODE.PERF_SCRIPT_INVALID, 'generate the merged script before running a mixed scene')
+    }
+    const k6 = await probeK6({ k6Path: (await readConfig(root))?.perf?.k6Path, ...probe })
+    if (k6.found !== true || typeof k6.path !== 'string') throw new WikiError(CODE.PERF_NO_K6, 'k6 is required to run a load test')
+    const target = String(spec?.target ?? 'test')
+    if (target === 'prod') throw new WikiError(CODE.PERF_PROD_BLOCKED, 'this scene targets production; confirm explicitly before running')
+
+    if (mode === 'load') {
+      const smoke = await latestSmokeVerdict(siteId, sceneId, script.scriptId)
+      if (smoke.found !== true) throw new WikiError(CODE.PERF_SMOKE_REQUIRED, 'run a smoke test first')
+      if (smoke.verdict !== 'PASS') {
+        throw new WikiError(CODE.PERF_SMOKE_REQUIRED, `the last smoke for this script did not pass (${smoke.verdict})`, { runId: smoke.runId })
+      }
+    }
+
+    const duration = typeof spec?.loadModel?.duration === 'string' ? spec.loadModel.duration : '5m'
+    const runId = newRunId()
+    const started = await runner.start({
+      k6Path: k6.path,
+      siteId,
+      runId,
+      sceneId,
+      scriptId: script.scriptId,
+      scriptPath: artifacts.scriptPathOf(siteId, scriptSlugOf(sceneId), script.scriptId),
+      mode,
+      baseUrl: null,
+      load: {
+        env: {
+          PERF_RATE_SCALE: mode === 'smoke' ? '0.02' : '1',
+          PERF_DURATION: mode === 'smoke' ? '15s' : duration,
+          ...(overrides.env ?? {}),
+        },
+      },
+    })
+    // Member base URLs are per scenario: `PERF_BASE_<n>` style env is unnecessary
+    // because each member's script already names its own `BASE_<n>` variable, and
+    // the value comes from the member's recording at merge time.
+    return { runId, mode, scriptId: script.scriptId, mixed: true, ...started, startedBy, sceneTitle: title }
+  }
+
+  /**
+   * Delivery per scenario for a finished mixed run (spec C10.7). Written into the
+   * report as `state.mix` so `evaluateVerdict` can mark it INVALID.
+   * @param {any} scriptMeta @param {any} summary
+   */
+  function mixDelivery(scriptMeta, summary) {
+    if (scriptMeta?.mixed !== true || !Array.isArray(scriptMeta.mixMap)) return null
+    return deliveryOf({ mixMap: scriptMeta.mixMap, metrics: summary?.metrics ?? {} })
+  }
+
   /** @param {{ siteId: string, runId?: string }} input */
   async function stopRun({ siteId, runId }) {
     const live = runner.status()
@@ -470,7 +651,10 @@ export function createPerf({ root, store, probe = {}, artifacts: artifactsDep, r
       ? evaluateVerdict({ summary: normalizeSummary(raw), exitCode: typeof state.exitCode === 'number' ? state.exitCode : null })
       : null
     const events = (await artifacts.readRunEvents(siteId, id)).slice(-40)
-    return { runId: id, running: false, state, live: null, series: [], verdict, events }
+    const scriptMeta = typeof state.scriptId === 'string'
+      ? (await artifacts.readScript(siteId, scriptSlugOf(String(state.sceneId ?? '')), state.scriptId))?.meta ?? null
+      : null
+    return { runId: id, running: false, state, live: null, series: [], verdict, events, mix: mixDelivery(scriptMeta, normalizeSummary(raw)) }
   }
 
   /** Runs for the scene, newest first: the panel lists them under 运行/报告. */
@@ -530,8 +714,10 @@ export function createPerf({ root, store, probe = {}, artifacts: artifactsDep, r
     const recordingMeta = typeof scriptMeta?.recId === 'string' ? await artifacts.readMeta(siteId, scriptMeta.recId) : null
     const smoke = await previousSmoke(siteId, sceneIdResolved, String(state.scriptId ?? ''), id)
 
-    const report = buildReport({ state, summary, events, scene, scriptMeta, recordingMeta, smoke })
-    return { runId: id, sceneId: sceneIdResolved, ...report, state }
+    const delivery = mixDelivery(scriptMeta, summary)
+    const stateForReport = delivery === null ? state : { ...state, mix: delivery }
+    const report = buildReport({ state: stateForReport, summary, events, scene, scriptMeta, recordingMeta, smoke })
+    return { runId: id, sceneId: sceneIdResolved, ...report, state: stateForReport, mix: delivery }
   }
 
   /**

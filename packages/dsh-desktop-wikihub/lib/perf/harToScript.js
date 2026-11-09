@@ -457,8 +457,47 @@ export function convertHar(input) {
   })
 
   const blocked = todos.filter((todo) => todo.severity === 'block').length
+  // The structured model is what the mix merge consumes (spec C10.8). Re-emitting
+  // from a model beats concatenating generated sources: no variable collisions, no
+  // duplicated imports, and the merged file keeps one `setup()`.
+  const model = {
+    version: 1,
+    baseUrl: String(input.baseUrl ?? ''),
+    host,
+    login:
+      loginEntry === null
+        ? null
+        : {
+            path: loginPathOf(loginEntry),
+            body: loginEntry.request?.postData?.text ?? null,
+            tokenPath: auth.tokenPath ?? auth.tokenJsonKey ?? null,
+            tokenSource: auth.tokenSource,
+          },
+    transactions: transactions.map((transaction) => ({
+      index: transaction.index,
+      label: transaction.label,
+      groups: transaction.groups
+        .filter((group) => group.entry !== loginEntry)
+        .map((group) => ({
+          method: group.method,
+          pathTemplate: group.pathTemplate,
+          urlTemplate: group.urlTemplate,
+          query: group.query,
+          headers: group.headers.map((header) => ({ name: String(header.name), value: String(header.value) })),
+          postData: group.postData ?? null,
+          status: group.status,
+          thinkTimeSec: group.thinkTimeSec,
+          occurrences: group.occurrences,
+          isDocument: group.isDocument === true,
+          binding: group.binding ?? null,
+        })),
+    })),
+    thinkTime,
+    medianThink,
+  }
   return {
     ok: errors.length === 0,
+    model,
     script,
     errors,
     warnings,
@@ -474,6 +513,15 @@ export function convertHar(input) {
       thirdPartyHosts: [...thirdParty],
       blockedTodos: blocked,
     },
+  }
+}
+
+/** Path of the login request, templated like any other path. */
+function loginPathOf(entry) {
+  try {
+    return templatizePath(new URL(String(entry.request.url)).pathname).template
+  } catch {
+    return '/'
   }
 }
 
