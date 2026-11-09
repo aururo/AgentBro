@@ -31,6 +31,9 @@ export function PerfRun({ site, sceneId, scene, active, t }) {
   const [smoke, setSmoke] = React.useState(/** @type {any} */ (null))
   const [vusDraft, setVusDraft] = React.useState('')
   const [durationDraft, setDurationDraft] = React.useState('')
+  // `KEY=VALUE, KEY2=VALUE2`. Never persisted: these are test credentials, and the
+  // spec keeps secrets out of files (the script only carries `__ENV` references).
+  const [envDraft, setEnvDraft] = React.useState('')
 
   const running = status?.running === true
   const runId = status?.runId ?? null
@@ -82,6 +85,13 @@ export function PerfRun({ site, sceneId, scene, active, t }) {
       setError(null)
       try {
         const overrides = {}
+        const env = {}
+        for (const pair of envDraft.split(',')) {
+          const index = pair.indexOf('=')
+          if (index <= 0) continue
+          env[pair.slice(0, index).trim()] = pair.slice(index + 1).trim()
+        }
+        if (Object.keys(env).length > 0) overrides.env = env
         if (mode === 'load') {
           if (vusDraft.trim() !== '') overrides.vus = Number(vusDraft)
           if (durationDraft.trim() !== '') overrides.duration = durationDraft.trim()
@@ -104,7 +114,7 @@ export function PerfRun({ site, sceneId, scene, active, t }) {
         setBusy(false)
       }
     },
-    [site, sceneId, vusDraft, durationDraft],
+    [site, sceneId, vusDraft, durationDraft, envDraft],
   )
 
   const halt = React.useCallback(async () => {
@@ -148,6 +158,14 @@ export function PerfRun({ site, sceneId, scene, active, t }) {
           title: smokePassed === true ? undefined : t('perf.runNeedSmoke'),
         }, t('perf.runLoad')),
         running ? h(Button, { variant: 'danger', onClick: () => void halt(), disabled: busy }, t('perf.runStop')) : null,
+        h('input', {
+          className: 'whInput',
+          style: { width: 220 },
+          placeholder: t('perf.runEnvPlaceholder'),
+          value: envDraft,
+          onChange: (event) => setEnvDraft(event.target.value),
+          'data-dsh-no-drag': '',
+        }),
         h('span', { className: 'whToolbarSpacer' }),
         state !== null ? h('span', { className: 'perfBadge', 'data-kind': verdict === 'PASS' ? 'pass' : verdict === 'FAIL' ? 'fail' : verdict === 'INVALID' ? 'warn' : 'run' }, String(verdict ?? state.status)) : null,
       ),

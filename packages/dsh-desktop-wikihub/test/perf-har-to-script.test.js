@@ -200,3 +200,26 @@ test('the generated script is syntactically loadable by k6', (t) => {
     rmSync(file, { force: true })
   }
 })
+
+test('redacted credentials become env references, and the list is reported', () => {
+  // The fixture's login body carries a redacted password; k6 would send the string
+  // "undefined" for an unset `__ENV.X`, so the script must declare what it needs.
+  const result = convert()
+  assert.equal(Array.isArray(result.requiredEnv), true)
+  assert.deepEqual(result.requiredEnv, ['PERF_PASSWORD'], 'exactly the redacted fields')
+  assert.match(result.script, /\$\{__ENV\.PERF_PASSWORD\}/)
+  assert.equal(
+    result.todos.some((todo) => todo.message.includes('PERF_PASSWORD')),
+    true,
+    'the run gate and the panel both read this from the TODO/meta',
+  )
+})
+
+test('a script without redacted credentials requires no env', () => {
+  const clean = JSON.parse(JSON.stringify(HAR))
+  for (const entry of clean.log.entries) {
+    if (entry.request.postData !== undefined) entry.request.postData.text = '{"user":"qa"}'
+  }
+  const result = convertHar({ har: clean, baseUrl: BASE, labels: LABELS, options: {} })
+  assert.deepEqual(result.requiredEnv, [])
+})

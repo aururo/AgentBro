@@ -692,3 +692,29 @@ test('export writes the report as a library page under perf/', async () => {
     assert.equal(written.input.body.includes('<redacted'), false)
   })
 })
+
+test('a script that needs env values refuses to run without them', async () => {
+  await withRoot(async (root) => {
+    const artifacts = await seedScript(root, { scriptId: 'env1234' })
+    // Rewrite the meta to declare a required env var (what conversion produces for
+    // a redacted credential).
+    await artifacts.writeScript('s', '下单主流程', 'env1234', {
+      source: 'export default function () {}',
+      meta: { scriptId: 'env1234', recId: 'rec_seed', todos: [], optional: true, requiredEnv: ['PERF_PASSWORD'], baseUrl: 'https://test.example.com' },
+    })
+    const runner = fakeRunner()
+    const perf = createPerf({ root, store: sceneStore(), probe: envWithBrowser, recorder: fakeRecorder(), artifacts, runner })
+
+    await assert.rejects(() => perf.startRun({ siteId: 's', sceneId: 'perf/下单主流程', mode: 'smoke' }), (error) => {
+      const anyError = /** @type {any} */ (error)
+      assert.equal(anyError.code, 'E_INVALID')
+      assert.deepEqual(anyError.details.missingEnv, ['PERF_PASSWORD'], 'the message must name what is missing')
+      return true
+    })
+    assert.deepEqual(runner.calls, [], 'nothing spawns without the credentials')
+
+    // Supplied values flow into argv, for smoke as well — a smoke that 401s is useless.
+    await perf.startRun({ siteId: 's', sceneId: 'perf/下单主流程', mode: 'smoke', overrides: { env: { PERF_PASSWORD: 'pw' } } })
+    assert.deepEqual(runner.calls[0].load.env, { PERF_PASSWORD: 'pw' })
+  })
+})

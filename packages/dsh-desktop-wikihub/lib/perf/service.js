@@ -297,6 +297,7 @@ export function createPerf({ root, store, probe = {}, artifacts: artifactsDep, r
       correlations: result.correlations,
       todos: result.todos,
       warnings: result.warnings,
+      requiredEnv: result.requiredEnv ?? [],
       options,
       resolutions,
     }
@@ -524,6 +525,7 @@ export function createPerf({ root, store, probe = {}, artifacts: artifactsDep, r
     if (target === 'prod' && overrides.allowProduction !== true) {
       throw new WikiError(CODE.PERF_PROD_BLOCKED, 'this scene targets production; confirm explicitly before running')
     }
+    requireEnv(script.meta?.requiredEnv, overrides.env)
 
     if (mode === 'load') {
       const smoke = await latestSmokeVerdict(siteId, sceneId, script.scriptId)
@@ -536,7 +538,8 @@ export function createPerf({ root, store, probe = {}, artifacts: artifactsDep, r
     const loadModel = scene.spec?.loadModel ?? {}
     const load =
       mode === 'smoke'
-        ? { vus: 1, duration: '30s' }
+        ? // 冒烟也要带 env：登录脚本没有凭据就是 401，冒烟会因为"配置缺失"而红
+          { vus: 1, duration: '30s', env: overrides.env }
         : {
             stages: Array.isArray(overrides.stages) ? overrides.stages : loadModel.mode === 'stages' ? loadModel.stages : undefined,
             vus: overrides.vus ?? (loadModel.mode === 'constant' ? loadModel.vus : undefined),
@@ -578,6 +581,7 @@ export function createPerf({ root, store, probe = {}, artifacts: artifactsDep, r
     if (k6.found !== true || typeof k6.path !== 'string') throw new WikiError(CODE.PERF_NO_K6, 'k6 is required to run a load test')
     const target = String(spec?.target ?? 'test')
     if (target === 'prod') throw new WikiError(CODE.PERF_PROD_BLOCKED, 'this scene targets production; confirm explicitly before running')
+    requireEnv(script.meta?.requiredEnv, overrides?.env)
 
     if (mode === 'load') {
       const smoke = await latestSmokeVerdict(siteId, sceneId, script.scriptId)
@@ -797,6 +801,23 @@ export function createPerf({ root, store, probe = {}, artifacts: artifactsDep, r
 function previewOf(source) {
   const lines = String(source ?? '').split('\n')
   return lines.slice(0, 200).join('\n') + (lines.length > 200 ? '\n…' : '')
+}
+
+/**
+ * Refuse a run whose script needs environment values nobody supplied.
+ *
+ * k6 renders an unset `__ENV.X` as the string "undefined" without warning, so the
+ * failure shows up as unexplained 401s instead of a missing-config error.
+ * @param {string[] | undefined} required @param {Record<string, unknown> | undefined} provided
+ */
+function requireEnv(required, provided) {
+  const list = Array.isArray(required) ? required.filter((key) => String(key).trim() !== '') : []
+  if (list.length === 0) return
+  const supplied = provided !== null && typeof provided === 'object' ? Object.keys(provided) : []
+  const missing = list.filter((key) => !supplied.includes(key))
+  if (missing.length > 0) {
+    throw new WikiError(CODE.INVALID, `this script needs environment values: ${missing.join(', ')}`, { missingEnv: missing })
+  }
 }
 
 /** The recording's base URL beats the scene's when they disagree (the recording

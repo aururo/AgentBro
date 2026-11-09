@@ -457,6 +457,20 @@ export function convertHar(input) {
   })
 
   const blocked = todos.filter((todo) => todo.severity === 'block').length
+  // Redacted credentials become `__ENV.PERF_*` references. k6 substitutes an unset
+  // variable with the literal string `undefined`, so a run without these values
+  // authenticates with "undefined" and every authenticated call fails while the
+  // document requests still pass — 25% failure with no visible cause. Collect them
+  // so the run gate can refuse instead.
+  const requiredEnv = [...new Set([...script.matchAll(/__ENV\.(PERF_[A-Z0-9_]+)/g)].map((match) => match[1]))]
+  if (requiredEnv.length > 0) {
+    todos.push({
+      key: 'env:' + requiredEnv.join(','),
+      kind: 'credential',
+      severity: 'warn',
+      message: `脚本需要环境变量 ${requiredEnv.join(', ')}：运行时必须提供，否则 k6 会发送字符串 "undefined"，鉴权请求全部失败`,
+    })
+  }
   // The structured model is what the mix merge consumes (spec C10.8). Re-emitting
   // from a model beats concatenating generated sources: no variable collisions, no
   // duplicated imports, and the merged file keeps one `setup()`.
@@ -497,6 +511,7 @@ export function convertHar(input) {
   }
   return {
     ok: errors.length === 0,
+    requiredEnv,
     model,
     script,
     errors,
